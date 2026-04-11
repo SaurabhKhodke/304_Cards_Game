@@ -1,0 +1,171 @@
+/* ============================================================
+   Animations – Shuffle · Deal · Card Flip · Trick Effects
+   ============================================================ */
+
+/* ============ DEAL ANIMATION ============ */
+@keyframes dealCard {
+  0%   { opacity: 0; transform: translateY(-80px) translateX(0) rotateY(120deg) scale(0.7); }
+  60%  { opacity: 1; transform: translateY(10px) translateX(0) rotateY(-10deg) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) rotateY(0deg) scale(1); }
+}
+
+/* Staggered deal-in animation for hand */
+.deal-animate .card {
+  opacity: 0;
+  animation: dealCard 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.deal-animate .card:nth-child(1) { animation-delay: 0.05s; }
+.deal-animate .card:nth-child(2) { animation-delay: 0.15s; }
+.deal-animate .card:nth-child(3) { animation-delay: 0.25s; }
+.deal-animate .card:nth-child(4) { animation-delay: 0.35s; }
+.deal-animate .card:nth-child(5) { animation-delay: 0.45s; }
+.deal-animate .card:nth-child(6) { animation-delay: 0.55s; }
+.deal-animate .card:nth-child(7) { animation-delay: 0.65s; }
+.deal-animate .card:nth-child(8) { animation-delay: 0.75s; }
+
+/* ============ SHUFFLE ANIMATION ============ */
+@keyframes deckShake {
+  0%   { transform: rotate(0deg) scale(1); }
+  10%  { transform: rotate(-6deg) scale(1.04); }
+  20%  { transform: rotate(6deg) scale(1.04); }
+  30%  { transform: rotate(-5deg) scale(1.02); }
+  40%  { transform: rotate(5deg) scale(1.02); }
+  50%  { transform: rotate(-3deg) scale(1.01); }
+  60%  { transform: rotate(3deg) scale(1.01); }
+  70%  { transform: rotate(-2deg) scale(1); }
+  80%  { transform: rotate(2deg) scale(1); }
+  100% { transform: rotate(0deg) scale(1); }
+}
+
+@keyframes deckGlow {
+  0%,100% { box-shadow: 0 4px 24px rgba(99,102,241,0.3); }
+  50%      { box-shadow: 0 4px 40px rgba(200,168,75,0.6), 0 0 0 2px rgba(200,168,75,0.3); }
+}
+
+.deck-shuffling {
+  animation: deckShake 0.8s ease-in-out infinite, deckGlow 0.8s ease-in-out infinite;
+}
+
+/* ============ SHUFFLE SCREEN OVERLAY ============ */
+#shuffle-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  background: rgba(8, 12, 16, 0.85);
+  backdrop-filter: blur(12px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 24px;
+  animation: overlayFadeIn 0.3s ease-out both;
+}
+@keyframes overlayFadeIn {
+  from { opacity: 0; } to { opacity: 1; }
+}
+.shuffle-deck-visual {
+  width: 80px; height: 110px;
+  position: relative;
+}
+.shuffle-deck-visual .deck-layer {
+  position: absolute; inset: 0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+  border: 1px solid rgba(255,255,255,0.15);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+.shuffle-deck-visual .deck-layer:nth-child(1) { transform: translate(-4px, -4px) rotate(-6deg); opacity: 0.6; }
+.shuffle-deck-visual .deck-layer:nth-child(2) { transform: translate(2px, -2px) rotate(3deg); opacity: 0.8; }
+.shuffle-deck-visual .deck-layer:nth-child(3) { transform: none; }
+.shuffle-deck-visual.animate { animation: deckShake 0.6s ease-in-out infinite; }
+
+.shuffle-text {
+  font-family: 'Outfit', sans-serif; font-size: 1.1rem; font-weight: 700;
+  color: var(--text-secondary); letter-spacing: 1px; text-transform: uppercase;
+  animation: shuffleTextPulse 1s ease-in-out infinite;
+}
+@keyframes shuffleTextPulse {
+  0%,100% { opacity: 0.6; } 50% { opacity: 1; }
+}
+
+.shuffle-dots span {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--gold); margin: 0 3px;
+  animation: dotBounce 1.2s ease-in-out infinite;
+}
+.shuffle-dots span:nth-child(2) { animation-delay: 0.2s; }
+.shuffle-dots span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes dotBounce {
+  0%,60%,100% { transform: translateY(0); opacity: 0.4; }
+  30%          { transform: translateY(-10px); opacity: 1; }
+}
+
+/* ============ TRICK CARD DROP ============ */
+@keyframes trickCardDrop {
+  from { opacity: 0; transform: scale(0.6) translateY(-24px) rotate(-8deg); }
+  to   { opacity: 1; transform: scale(1) translateY(0) rotate(0deg); }
+}
+
+/* ============ TRICK WINNER ============ */
+@keyframes trickWinPulse {
+  0%   { transform: translate(-50%,-50%) scale(0.8); opacity: 0; }
+  30%  { transform: translate(-50%,-50%) scale(1.1); opacity: 1; }
+  70%  { transform: translate(-50%,-50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(0.9); opacity: 0; }
+}
+
+.trick-winner-text {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  z-index: 30; pointer-events: none;
+  background: linear-gradient(135deg, rgba(200,168,75,0.95), rgba(232,168,32,0.95));
+  color: #000; padding: 12px 28px; border-radius: var(--r-full);
+  font-weight: 900; font-size: 1rem; font-family: 'Outfit', sans-serif;
+  box-shadow: 0 0 30px rgba(200,168,75,0.6), 0 6px 20px rgba(0,0,0,0.5);
+  white-space: nowrap; letter-spacing: 0.3px;
+  animation: trickWinPulse 2.2s ease-in-out forwards;
+}
+
+/* ============ PARTNER REVEAL ============ */
+@keyframes partnerReveal {
+  0%   { transform: translate(-50%,-50%) scale(0); rotate: -20deg; opacity: 0; }
+  50%  { transform: translate(-50%,-50%) scale(1.15) rotate(3deg); opacity: 1; }
+  80%  { transform: translate(-50%,-50%) scale(0.97) rotate(0deg); opacity: 1; }
+  100% { transform: translate(-50%,-50%) scale(1) rotate(0deg); opacity: 0; }
+}
+.partner-reveal-badge {
+  position: absolute; top: 40%; left: 50%;
+  transform: translate(-50%,-50%); z-index: 40;
+  background: linear-gradient(135deg, #8b5cf6, #6366f1);
+  color: #fff; padding: 14px 30px; border-radius: var(--r-full);
+  font-weight: 900; font-size: 1.05rem; font-family: 'Outfit', sans-serif;
+  box-shadow: 0 0 40px rgba(139,92,246,0.6); pointer-events: none;
+  animation: partnerReveal 3s ease-in-out forwards;
+  text-align: center; line-height: 1.4;
+}
+
+/* ============ CARD FLIP (play to trick) ============ */
+@keyframes cardFlipPlay {
+  0%   { transform: scale(1) translateY(0) rotateY(0deg); opacity: 1; }
+  40%  { transform: scale(1.2) translateY(-30px) rotateY(90deg); opacity: 0.6; }
+  100% { transform: scale(1) translateY(0) rotateY(0deg); opacity: 0; }
+}
+.card.playing-animation {
+  animation: cardFlipPlay 0.4s ease-in-out forwards;
+  pointer-events: none; z-index: 30;
+}
+
+/* ============ TURN GLOW FOR AVATARS ============ */
+@keyframes avatarRingPulse {
+  0%,100% { box-shadow: 0 0 0 3px rgba(200,168,75,0.4), 0 4px 16px rgba(0,0,0,0.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(200,168,75,0.6), 0 4px 24px rgba(200,168,75,0.25); }
+}
+.active-turn { animation: avatarRingPulse 1.6s ease-in-out infinite !important; }
+
+/* ============ SCREEN TRANSITION ============ */
+@keyframes screenFadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.screen.active { animation: screenFadeIn 0.4s ease-out both; }
+
+/* ============ TOAST SLIDE IN ============ */
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateY(24px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}

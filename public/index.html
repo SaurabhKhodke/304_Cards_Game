@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="description" content="304 Card Game - A real-time multiplayer card game for friends and family" />
+  <title>304 | Card Game</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <link rel="stylesheet" href="/css/game.css" />
+  <link rel="stylesheet" href="/css/cards.css" />
+  <link rel="stylesheet" href="/css/animations.css" />
+</head>
+<body>
+
+  <!-- ============== CONNECTION BAR ============== -->
+  <div id="connection-bar" class="connection-bar hidden">
+    <span id="connection-text">⚡ Reconnecting...</span>
+  </div>
+
+  <!-- ============== SCREEN: AUTH ============== -->
+  <div id="screen-auth" class="screen active">
+    <div class="auth-container">
+      <div class="auth-logo-box">
+        <div class="auth-icon">🃏</div>
+        <h1 class="auth-title">304</h1>
+        <p class="auth-subtitle">Family Card Game</p>
+      </div>
+
+      <div class="auth-card">
+        <div class="auth-tabs">
+          <button id="tab-login" class="auth-tab active" data-tab="login">Login</button>
+          <button id="tab-register" class="auth-tab" data-tab="register">Sign Up</button>
+        </div>
+
+        <!-- Login -->
+        <form id="form-login" class="auth-form">
+          <div class="form-group">
+            <label for="login-username">Username</label>
+            <input type="text" id="login-username" placeholder="Enter your username" autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label for="login-password">Password</label>
+            <input type="password" id="login-password" placeholder="Enter your password" autocomplete="current-password" />
+          </div>
+          <button type="submit" class="btn-primary btn-full" id="btn-login">Login</button>
+          <div id="login-error" class="auth-error hidden"></div>
+        </form>
+
+        <!-- Register -->
+        <form id="form-register" class="auth-form hidden">
+          <div class="form-group">
+            <label for="reg-username">Username</label>
+            <input type="text" id="reg-username" placeholder="Choose a username" autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label for="reg-displayname">Display Name</label>
+            <input type="text" id="reg-displayname" placeholder="What friends see" autocomplete="nickname" />
+          </div>
+          <div class="form-group">
+            <label for="reg-password">Password</label>
+            <input type="password" id="reg-password" placeholder="Create a password" autocomplete="new-password" />
+          </div>
+          <button type="submit" class="btn-primary btn-full" id="btn-register">Create Account</button>
+          <div id="register-error" class="auth-error hidden"></div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============== SCREEN: LOBBY ============== -->
+  <div id="screen-lobby" class="screen">
+    <div class="lobby-header">
+      <span class="lobby-user" id="lobby-username"></span>
+      <div class="lobby-header-actions">
+        <button class="btn-text" id="btn-profile" title="Edit Profile">⚙️ Profile</button>
+        <button class="btn-text" id="btn-logout">Logout</button>
+      </div>
+    </div>
+
+    <div class="lobby-container">
+      <div id="lobby-welcome" class="lobby-welcome">Welcome back! Ready to play?</div>
+
+      <div class="lobby-actions">
+        <button class="btn-primary btn-full btn-create" id="btn-create-room">🎴 Create Room</button>
+        <div class="divider-or"><span>or join existing</span></div>
+        <div class="join-row">
+          <input type="text" id="input-room-code" placeholder="ROOM CODE" maxlength="6" class="input-room-code" />
+          <button class="btn-secondary" id="btn-join-room">Join →</button>
+        </div>
+
+        <div class="lobby-links">
+          <button class="btn-text" id="btn-stats">📊 My Stats</button>
+          <button class="btn-text" id="btn-leaderboard">🏆 Leaderboard</button>
+        </div>
+      </div>
+
+      <!-- Room Area -->
+      <div id="room-area" class="room-area hidden">
+        <div class="room-header">
+          <span class="room-label">Room Code</span>
+          <span class="room-code" id="room-code-display"></span>
+          <button class="btn-icon" id="btn-copy-code" title="Copy / Share">📋</button>
+        </div>
+
+        <div class="seat-grid">
+          <div class="seat-slot" id="seat-1" data-seat="1">
+            <div class="seat-avatar">🎮</div>
+            <div class="seat-number">Seat 1</div>
+            <div class="seat-player">Empty</div>
+            <div class="seat-status"></div>
+          </div>
+          <div class="seat-slot" id="seat-2" data-seat="2">
+            <div class="seat-avatar">🎮</div>
+            <div class="seat-number">Seat 2</div>
+            <div class="seat-player">Empty</div>
+            <div class="seat-status"></div>
+          </div>
+          <div class="seat-slot" id="seat-3" data-seat="3">
+            <div class="seat-avatar">🎮</div>
+            <div class="seat-number">Seat 3</div>
+            <div class="seat-player">Empty</div>
+            <div class="seat-status"></div>
+          </div>
+          <div class="seat-slot" id="seat-4" data-seat="4">
+            <div class="seat-avatar">🎮</div>
+            <div class="seat-number">Seat 4</div>
+            <div class="seat-player">Empty</div>
+            <div class="seat-status"></div>
+          </div>
+        </div>
+        <p id="waiting-text" class="waiting-text">0/4 players seated. Waiting...</p>
+      </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="modal-stats" class="modal-overlay hidden">
+      <div class="modal-box">
+        <button class="modal-close" data-close="modal-stats">✕</button>
+        <h3>📊 My Stats</h3>
+        <div id="stats-content" class="stats-grid"></div>
+      </div>
+    </div>
+    <div id="modal-leaderboard" class="modal-overlay hidden">
+      <div class="modal-box">
+        <button class="modal-close" data-close="modal-leaderboard">✕</button>
+        <h3>🏆 Leaderboard</h3>
+        <div id="leaderboard-content"></div>
+      </div>
+    </div>
+    
+    <!-- Profile Edit Modal -->
+    <div id="modal-profile" class="modal-overlay hidden">
+      <div class="modal-box">
+        <button class="modal-close" data-close="modal-profile">✕</button>
+        <h3>⚙️ Edit Profile</h3>
+        <div class="profile-edit-body" style="display:flex;flex-direction:column;gap:15px;margin-top:10px;">
+          <div style="display:flex;justify-content:center;margin-bottom:10px;">
+             <label for="profile-pic-upload" style="cursor:pointer;position:relative;width:80px;height:80px;border-radius:50%;overflow:hidden;background:rgba(255,255,255,0.1);display:flex;align-items:center;justify-content:center;border:2px solid var(--border-gold);">
+               <img id="profile-pic-preview" style="display:none;width:100%;height:100%;object-fit:cover;" />
+               <div id="profile-pic-placeholder" style="font-size:2rem;">📷</div>
+             </label>
+             <input type="file" id="profile-pic-upload" accept="image/*" style="display:none;" />
+          </div>
+          <div class="form-group">
+            <label style="color:var(--text-muted);font-size:0.8rem;">Display Name</label>
+            <input type="text" id="edit-displayname" class="input-bid" style="width:100%;margin-top:4px;" />
+          </div>
+          <button id="btn-save-profile" class="btn-action btn-green btn-full">Save Profile</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============== SCREEN: GAME ============== -->
+  <div id="screen-game" class="screen">
+
+    <!-- Game Top Bar -->
+    <div class="game-topbar">
+      <div class="game-info-left">
+        <span id="game-username-display" class="game-username"></span>
+        <span id="round-display">Round 1</span>
+        <span id="phase-display" class="phase-badge">Lobby</span>
+      </div>
+      <div class="game-stats-center" style="display: flex; gap: 15px; margin-left: 20px;">
+        <div class="stat-box">Target: <span id="game-target-score" style="color:var(--gold); font-weight:800;">0</span></div>
+        <div id="hukum-indicator" class="hukum-indicator hidden">
+          <span class="hukum-label">Hukum</span>
+          <span id="hukum-suit-display" class="hukum-suit"></span>
+        </div>
+      </div>
+      <div id="partner-indicator" class="hukum-indicator hidden" style="margin-left:4px;">
+        <span class="hukum-label" style="color: var(--accent-secondary)">Partner</span>
+        <span id="partner-card-display" class="hukum-suit" style="font-size:1.1rem"></span>
+      </div>
+      <div class="game-info-right">
+        <button class="btn-icon-sm" id="btn-scoreboard" title="Scoreboard">📊</button>
+        <button class="btn-icon-sm" id="btn-history" title="History">📜</button>
+      </div>
+    </div>
+
+    <!-- Turn Indicator -->
+    <div id="turn-indicator" class="turn-indicator hidden">
+      <span id="turn-text">Your Turn!</span>
+    </div>
+
+    <!-- Game Table -->
+    <div class="game-table">
+
+      <!-- Opponent Top -->
+      <div class="player-area player-top">
+        <div class="player-nameplate">
+          <div class="player-avatar" id="avatar-top">🎴</div>
+          <div class="player-label">
+            <span id="opponent-top-name" class="player-name">---</span>
+            <span id="opponent-top-count" class="card-count">0</span>
+          </div>
+        </div>
+        <div id="opponent-top-cards" class="opponent-cards"></div>
+      </div>
+
+      <!-- Opponent Left -->
+      <div class="player-area player-left">
+        <div class="player-nameplate">
+          <div class="player-avatar" id="avatar-left">🎴</div>
+          <div class="player-label">
+            <span id="opponent-left-name" class="player-name">---</span>
+            <span id="opponent-left-count" class="card-count">0</span>
+          </div>
+        </div>
+        <div id="opponent-left-cards" class="opponent-cards"></div>
+      </div>
+
+      <!-- Trick Center -->
+      <div class="trick-center">
+        <!-- Deck visual for dealing animation -->
+        <div id="deck-center">
+          <div class="deck-card-visual"></div>
+        </div>
+
+        <div id="trick-top" class="trick-slot"></div>
+        <div class="trick-row-mid">
+          <div id="trick-left" class="trick-slot"></div>
+          <div id="trick-right" class="trick-slot"></div>
+        </div>
+        <div id="trick-bottom" class="trick-slot"></div>
+      </div>
+
+      <!-- Opponent Right -->
+      <div class="player-area player-right">
+        <div class="player-nameplate">
+          <div class="player-avatar" id="avatar-right">🎴</div>
+          <div class="player-label">
+            <span id="opponent-right-name" class="player-name">---</span>
+            <span id="opponent-right-count" class="card-count">0</span>
+          </div>
+        </div>
+        <div id="opponent-right-cards" class="opponent-cards"></div>
+      </div>
+    </div>
+
+    <!-- My Player Area (bottom nameplate) -->
+    <div class="my-player-area">
+      <div class="my-player-avatar" id="my-player-avatar">😎</div>
+      <span class="my-player-name" id="my-player-name-display">You</span>
+    </div>
+      
+    <!-- Marriage Actions -->
+    <div id="marriage-actions" class="hidden" style="position:absolute; bottom: 120px; left: 50%; transform: translateX(-50%); z-index: 100; background: var(--bg-glass-light); padding: 10px; border-radius: var(--r-md); border: 1px solid var(--border-gold); box-shadow: var(--shadow-gold); display: flex; gap: 8px;">
+       <select id="marriage-suit-select" style="background: rgba(0,0,0,0.5); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--r-xs); padding: 5px; font-weight: bold;">
+       </select>
+       <button id="btn-declare-marriage" class="btn-action btn-green" style="padding: 6px 12px; font-size: 0.9rem;">💍 Declare Marriage</button>
+    </div>
+
+    <!-- Sort Button -->
+    <div id="sort-container" class="sort-container hidden">
+      <button id="btn-sort-hand" class="btn-sort">🔀 Sort Hand</button>
+    </div>
+
+    <!-- My Hand (bottom) -->
+    <div id="my-hand" class="my-hand"></div>
+
+    <!-- ============== ACTION PANELS ============== -->
+    <div id="action-panel" class="action-panel hidden">
+
+      <!-- Vakhai -->
+      <div id="vakhai-panel" class="action-section hidden">
+        <p id="vakhai-desc" class="action-desc">Declare vakhai or pass</p>
+        <div class="action-buttons">
+          <button id="btn-vakhai-3" class="btn-action btn-green">Vakhai 3</button>
+          <button id="btn-vakhai-5" class="btn-action btn-green">Vakhai 5</button>
+          <button id="btn-vakhai-pass" class="btn-action btn-ghost">Pass</button>
+        </div>
+      </div>
+
+      <!-- Bidding -->
+      <div id="bidding-panel" class="action-section hidden">
+        <p class="action-desc">Current bid: <strong id="current-bid-display">None yet</strong></p>
+        <div class="action-buttons bid-buttons">
+          <button class="btn-bid btn-action btn-blue" data-bid="150">150</button>
+          <button class="btn-bid btn-action btn-blue" data-bid="180">180</button>
+          <button class="btn-bid btn-action btn-blue" data-bid="200">200</button>
+          <button class="btn-bid btn-action btn-blue" data-bid="220">220</button>
+          <button class="btn-bid btn-action btn-blue" data-bid="250">250</button>
+          <button class="btn-bid btn-action btn-blue" data-bid="280">280</button>
+          <button class="btn-bid btn-action btn-blue" data-bid="304">304</button>
+        </div>
+        <div class="custom-bid-row">
+          <input type="number" id="custom-bid-input" min="150" max="304" placeholder="Custom bid" class="input-bid" />
+          <button id="btn-custom-bid" class="btn-action btn-blue">Bid</button>
+          <button id="btn-bid-pass" class="btn-action btn-ghost">Pass</button>
+        </div>
+      </div>
+
+      <!-- Hukum -->
+      <div id="hukum-panel" class="action-section hidden">
+        <p class="action-desc">Choose your trump suit (hukum)</p>
+        <div class="action-buttons suit-buttons">
+          <button class="btn-suit" data-suit="spades">
+            <span class="suit-icon suit-black">♠</span> Spades
+          </button>
+          <button class="btn-suit" data-suit="hearts">
+            <span class="suit-icon suit-red">♥</span> Hearts
+          </button>
+          <button class="btn-suit" data-suit="diamonds">
+            <span class="suit-icon suit-red">♦</span> Diamonds
+          </button>
+          <button class="btn-suit" data-suit="clubs">
+            <span class="suit-icon suit-black">♣</span> Clubs
+          </button>
+        </div>
+      </div>
+
+      <!-- Partner -->
+      <div id="partner-panel" class="action-section hidden">
+        <p class="action-desc">Choose the partner card (must be in someone else's hand)</p>
+        <div id="partner-card-options" class="partner-options"></div>
+        <button id="btn-confirm-partner" class="btn-action btn-green btn-full" disabled>Confirm Partner Card</button>
+      </div>
+
+      <!-- Trick Play -->
+      <div id="trickplay-panel" class="action-section hidden">
+        <button id="btn-reveal-partner" class="btn-action btn-blue btn-full"
+          style="box-shadow: 0 0 20px rgba(99,102,241,0.4)">
+          🤝 Ask Partner to Reveal
+        </button>
+      </div>
+    </div>
+
+    <!-- ============== OVERLAYS ============== -->
+    <!-- Scoreboard -->
+    <div id="scoreboard-overlay" class="overlay hidden">
+      <div class="overlay-box">
+        <h3>📊 Scoreboard</h3>
+        <table class="score-table">
+          <thead><tr><th>Player</th><th>Last Round</th><th>Total</th></tr></thead>
+          <tbody id="score-table-body"></tbody>
+        </table>
+        <button id="btn-close-scoreboard" class="btn-action btn-ghost btn-full">Close</button>
+      </div>
+    </div>
+
+    <!-- History -->
+    <div id="history-overlay" class="overlay hidden">
+      <div class="overlay-box">
+        <h3>📜 Round History</h3>
+        <div id="history-content" class="history-list"></div>
+        <button id="btn-close-history" class="btn-action btn-ghost btn-full">Close</button>
+      </div>
+    </div>
+
+    <!-- Round Result -->
+    <div id="round-result-overlay" class="overlay hidden">
+      <div class="overlay-box overlay-result">
+        <h2 id="round-result-title"></h2>
+        <div id="round-result-content"></div>
+        <button id="btn-next-round" class="btn-action btn-green btn-full" style="margin-bottom:10px">Next Round →</button>
+        <button id="btn-back-lobby" class="btn-action btn-ghost btn-full">Back to Lobby</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/cardRenderer.js"></script>
+  <script src="/js/animations.js"></script>
+  <script src="/js/socket.js"></script>
+  <script src="/js/auth.js"></script>
+  <script src="/js/lobby.js"></script>
+  <script src="/js/game.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
