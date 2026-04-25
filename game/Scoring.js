@@ -49,29 +49,26 @@ class Scoring {
     }
 
     if (bidSuccess) {
-      // Bid succeeded
-      const bidderMarks = bidAmount > 220 ? 2 : 1;
-      roundMarks[bidderSeat] += bidderMarks;
-      
-      // Partner gets +1 if bid succeeded
-      if (partnerSeat && partnerSeat !== bidderSeat) {
-        roundMarks[partnerSeat] += 1;
+      if (bidAmount >= 225) {
+        roundMarks[bidderSeat] += 2;
+        if (partnerSeat && partnerSeat !== bidderSeat) roundMarks[partnerSeat] += 2;
+      } else {
+        const bidderMarks = bidAmount > 220 ? 2 : 1;
+        roundMarks[bidderSeat] += bidderMarks;
+        if (partnerSeat && partnerSeat !== bidderSeat) roundMarks[partnerSeat] += 1;
       }
-      
-      // Opponents get 0
       for (const s of opponentTeam) {
         roundMarks[s] += 0;
       }
     } else {
-      // Bid failed
-      roundMarks[bidderSeat] -= 1;
-      
-      // Partner also loses if the team failed
-      // (Based on standard rules, partner gets 0 on failure)
-      
-      // Opponents win → +1 each
-      for (const s of opponentTeam) {
-        roundMarks[s] += 1;
+      if (bidAmount >= 225) {
+        roundMarks[bidderSeat] -= 1;
+        // partner gets +0 implicitly (it starts at 0)
+        for (const s of opponentTeam) roundMarks[s] += 1;
+      } else {
+        // Build < 225 failed
+        roundMarks[bidderSeat] -= 1;
+        for (const s of opponentTeam) roundMarks[s] += 1;
       }
     }
 
@@ -98,6 +95,38 @@ class Scoring {
       roundMarks: { ...roundMarks },
       totalMarks: { ...this.totalMarks },
       vakhaiResults
+    };
+
+    this.roundHistory.push(roundResult);
+    return roundResult;
+  }
+
+  /**
+   * Apply marks for a Vakhai-only round (no bidding/tricks).
+   * Called by GameEngine.handleVakhaiCardPlay when vakhai completes.
+   */
+  applyVakhaiRound({ vakhaiDeclarer, vakhaiStake, vakhaiDefeated, roundMarks, roundNumber }) {
+    // Update totals
+    for (let s = 1; s <= 4; s++) {
+      this.totalMarks[s] += (roundMarks[s] || 0);
+    }
+
+    const roundResult = {
+      roundNumber,
+      isVakhaiRound: true,
+      vakhaiDeclarer,
+      vakhaiStake,
+      vakhaiDefeated,
+      bidAmount: vakhaiStake,
+      finalTarget: vakhaiStake,
+      bidderSeat: vakhaiDeclarer,
+      partnerSeat: null,
+      bidSuccess: !vakhaiDefeated,
+      bidderTeamPoints: 0,
+      opponentTeamPoints: 0,
+      roundMarks: { ...roundMarks },
+      totalMarks: { ...this.totalMarks },
+      vakhaiResults: []
     };
 
     this.roundHistory.push(roundResult);

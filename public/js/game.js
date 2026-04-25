@@ -59,8 +59,16 @@ const GameUI = {
 
     // Back to lobby
     document.getElementById('btn-back-lobby').addEventListener('click', () => {
+      this.reset();
       App.showScreen('lobby');
-      LobbyUI.reset();
+      // If we are still in a room, the lobby UI will automatically display the existing room state
+      // since it processes 'room:update' events continuously.
+      if (SocketClient.roomId && LobbyUI.currentRoomId !== SocketClient.roomId) {
+         // Fallback sync if lobby got disconnected from state
+         SocketClient.emit('room:join', SocketClient.roomId, (res) => {
+             if (res && res.success) LobbyUI.updateRoomDisplay(res.room);
+         });
+      }
     });
 
     // Force Reveal
@@ -87,6 +95,7 @@ const GameUI = {
     SocketClient.on('game:vakhaiStart', (data) => this.onVakhaiStart(data));
     SocketClient.on('game:vakhaiUpdate', (data) => this.onVakhaiUpdate(data));
     SocketClient.on('game:vakhaiResults', (data) => this.onVakhaiResults(data));
+    SocketClient.on('game:vakhaiTrickStart', (data) => this.onVakhaiTrickStart(data));
     SocketClient.on('game:biddingStart', (data) => this.onBiddingStart(data));
     SocketClient.on('game:biddingUpdate', (data) => this.onBiddingUpdate(data));
     SocketClient.on('game:hukumSelect', (data) => this.onHukumSelect(data));
@@ -100,6 +109,19 @@ const GameUI = {
     SocketClient.on('game:roundReadyState', (data) => this.onRoundReadyState(data));
     SocketClient.on('game:partnerForceRevealed', (data) => this.onPartnerForceRevealed(data));
     SocketClient.on('game:marriageDeclared', (data) => this.onMarriageDeclared(data));
+    // Hydration: server restores full state after reconnect
+    // (main handler in socket.js; this secondary hook is for UI consistency)
+    SocketClient.on('game:hydrate', (payload) => {
+      if (payload.seat && !this.mySeat) this.mySeat = payload.seat;
+      if (payload.gameState) this.handleFullState(payload.gameState, payload.roomState);
+    });
+
+    // Periodic safety resync if game is active (every 30s)
+    setInterval(() => {
+      if (App.currentScreen === 'game' && SocketClient.socket?.connected) {
+        SocketClient.requestSync();
+      }
+    }, 30000);
   },
 
   // ============================================================
@@ -181,32 +203,97 @@ const GameUI = {
     return null;
   },
 
+  /**
+   * Reset all local game state and clear the game table UI 
+   * (used when returning to lobby)
+   */
+  reset() {
+    this.gameState = null;
+    this.roomState = null;
+    this.selectedPartnerCard = null;
+    this.handSorted = false;
+    this.localHandOrder = null;
+
+    // Clear cards + tricks
+    Animations.clearTrickArea();
+    document.getElementById('my-hand').innerHTML = '';
+    ['top', 'left', 'right'].forEach(pos => {
+      const el = document.getElementById(`opponent-${pos}-cards`);
+      if (el) el.innerHTML = '';
+    });
+
+    // Reset nameplates to empty
+    ['top', 'left', 'right'].forEach(pos => {
+      const nameEl = document.getElementById(`opponent-${pos}-name`);
+      if (nameEl) nameEl.textContent = '---';
+      const countEl = document.getElementById(`opponent-${pos}-count`);
+      if (countEl) countEl.textContent = '0';
+    });
+
+    // Hide overlays and indicators
+    this.hideAllPanels();
+    document.getElementById('round-result-overlay').classList.add('hidden');
+    document.getElementById('scoreboard-overlay').classList.add('hidden');
+    document.getElementById('history-overlay').classList.add('hidden');
+    document.getElementById('hukum-indicator').classList.add('hidden');
+    document.getElementById('partner-indicator').classList.add('hidden');
+    
+    const turnInd = document.getElementById('turn-indicator');
+    if (turnInd) {
+       turnInd.classList.add('hidden');
+       turnInd.classList.remove('my-turn');
+    }
+    Animations.setActivePlayer(null);
+
+    // Reset textual indicators
+    document.getElementById('game-target-score').textContent = '0';
+    document.getElementById('round-display').textContent = 'Round 1';
+    document.getElementById('phase-display').textContent = 'Lobby';
+  },
+
   // ============================================================
   // Full State Update (reconnection)
   // ============================================================
   handleFullState(state, room) {
     this.gameState = state;
-    
-    // Always attempt to restore mySeat from LobbyUI if it is somehow missing
+
+    // Recover mySeat from multiple sources
     if (!this.mySeat && LobbyUI.mySeat) {
       this.mySeat = LobbyUI.mySeat;
+    }
+    // Try to find own seat by matching currentUser in room seats
+    if (!this.mySeat && room && room.seats && window.currentUser) {
+      for (const [s, p] of Object.entries(room.seats)) {
+        if (p && String(p.userId) === String(window.currentUser.id)) {
+          this.mySeat = parseInt(s);
+          LobbyUI.mySeat = this.mySeat;
+          break;
+        }
+      }
     }
 
     if (room) {
       this.roomState = room;
       if (room.seats) this.updatePlayerNames(room.seats);
     }
+    if (!room && this.roomState?.seats) {
+      this.updatePlayerNames(this.roomState.seats);
+    }
 
     document.getElementById('round-display').textContent = `Round ${state.roundNumber}`;
     document.getElementById('phase-display').textContent = this.getPhaseLabel(state.phase);
 
-    // If we reconnect, update player names using gameState if room was not provided
-    if (!room && this.roomState && this.roomState.seats) {
-      this.updatePlayerNames(this.roomState.seats);
-    }
-
     // Always render hand when we have cards
     if (state.myHand && state.myHand.length > 0) {
+      if (this.handSorted && this.localHandOrder) {
+        state.myHand.sort((a, b) => {
+          let idxA = this.localHandOrder.indexOf(a.id);
+          let idxB = this.localHandOrder.indexOf(b.id);
+          if (idxA === -1) idxA = 999;
+          if (idxB === -1) idxB = 999;
+          return idxA - idxB;
+        });
+      }
       this.renderMyHand(state);
     }
 
@@ -241,8 +328,12 @@ const GameUI = {
     // Show correct action panel based on phase
     this.hideAllPanels();
     if (state.phase === 'VAKHAI' && state.vakhai) {
-      if (state.vakhai.currentTurn === this.mySeat) {
+      if (state.vakhai.state === 'PLAYING') {
+        this.renderTrickState(state.vakhai);
+      } else if (state.vakhai.currentTurn === this.mySeat) {
         this.showPanel('vakhai');
+        // Ensure buttons are re-enabled
+        document.querySelectorAll('#vakhai-panel .btn-action').forEach(b => b.disabled = false);
       }
     } else if (state.phase === 'BIDDING' && state.bidding) {
       this.onBiddingUpdate(state.bidding);
@@ -262,6 +353,7 @@ const GameUI = {
 
       this.updateOtherPlayers(state.otherPlayersCardCount || {});
       this.updateTurnIndicator(state);
+      this.checkMarriageOptions(state);
     }
 
     this.updateTurnIndicator(state);
@@ -287,14 +379,20 @@ const GameUI = {
     if (!this.gameState || !this.gameState.myHand) return;
     // Black (spades), Red (diamonds), Black (clubs), Red (hearts)
     const suitOrder = { spades: 0, diamonds: 1, clubs: 2, hearts: 3 };
+    const rankOrder = { 'J':8, '9':7, 'A':6, '10':5, 'K':4, 'Q':3, '8':2, '7':1 };
+    
     this.gameState.myHand.sort((a, b) => {
       if (suitOrder[a.suit] !== suitOrder[b.suit]) {
         return suitOrder[a.suit] - suitOrder[b.suit];
       }
-      return b.strength - a.strength;
+      return (rankOrder[b.rank] || 0) - (rankOrder[a.rank] || 0);
     });
+    
     this.handSorted = true;
+    this.localHandOrder = this.gameState.myHand.map(c => c.id);
+    
     this.renderMyHand(this.gameState);
+    
     // Hide sort button after use
     document.getElementById('sort-container').classList.add('hidden');
     Animations.showToast('Cards sorted by suit!', 'success');
@@ -317,8 +415,23 @@ const GameUI = {
   async onDealing(data) {
     document.getElementById('round-display').textContent = `Round ${data.roundNumber}`;
     document.getElementById('phase-display').textContent = 'Dealing';
+    
+    // Clear old UI states
+    this.partnerMessageShown = false;
+    const partnerEl = document.getElementById('partner-indicator');
+    if (partnerEl) partnerEl.classList.add('hidden');
+    const hukumEl = document.getElementById('hukum-indicator');
+    if (hukumEl) hukumEl.classList.add('hidden');
+    document.getElementById('game-target-score').textContent = '0';
+    
+    // Clear active turn highlights
+    document.querySelectorAll('.player-avatar, .my-player-avatar').forEach(el => el.classList.remove('active-turn'));
+    const indicator = document.getElementById('turn-indicator');
+    if (indicator) indicator.classList.add('hidden');
+
     this.hideAllPanels();
     this.handSorted = false;
+    this.localHandOrder = null;
     Animations.clearTrickArea();
 
     await Animations.showShuffle(1500);
@@ -329,6 +442,9 @@ const GameUI = {
       this.gameState = this.gameState || {};
       this.gameState.myHand = data.hand;
       this.gameState.phase = data.phase === 'first' ? 'VAKHAI' : 'BIDDING';
+      
+      document.getElementById('phase-display').textContent = this.getPhaseLabel(this.gameState.phase);
+      
       this.renderMyHand(this.gameState);
       Animations.dealCardsToHand(document.getElementById('my-hand'));
       // Show sort button when full hand is dealt (8 cards)
@@ -339,14 +455,20 @@ const GameUI = {
   renderMyHand(state) {
     const container = document.getElementById('my-hand');
     const hand = state.myHand || [];
-    const isMyTurn = state.trickPlay?.currentTurn === this.mySeat;
-    const playable = state.phase === 'TRICK_PLAY' && isMyTurn;
+    
+    const isTrickTurn = state.phase === 'TRICK_PLAY' && state.trickPlay?.currentTurn === this.mySeat;
+    const isVakhaiTurn = state.phase === 'VAKHAI' && state.vakhai?.state === 'PLAYING' && state.vakhai?.currentTurn === this.mySeat;
+    const playable = isTrickTurn || isVakhaiTurn;
 
     let playableCards = null;
-    if (playable && state.trickPlay?.leadSuit) {
-      const hasLeadSuit = hand.some(c => c.suit === state.trickPlay.leadSuit);
-      if (hasLeadSuit) {
-        playableCards = hand.filter(c => c.suit === state.trickPlay.leadSuit).map(c => c.id);
+    if (playable) {
+      const activeObj = isTrickTurn ? state.trickPlay : state.vakhai;
+      if (activeObj?.leadSuit) {
+        const hasLeadSuit = hand.some(c => c.suit === activeObj.leadSuit);
+        if (hasLeadSuit) {
+          // Simply highlight lead suit cards
+          playableCards = hand.filter(c => c.suit === activeObj.leadSuit).map(c => c.id);
+        }
       }
     }
 
@@ -389,6 +511,8 @@ const GameUI = {
     if (data.currentTurn === this.mySeat) {
       this.showPanel('vakhai');
       document.getElementById('vakhai-desc').textContent = 'You have the first 4 cards. Declare vakhai or pass.';
+      // Ensure buttons are re-enabled for the new round
+      document.querySelectorAll('#vakhai-panel .btn-action').forEach(b => b.disabled = false);
     } else {
       this.hideAllPanels();
       Animations.showToast('Vakhai phase - waiting for others...', 'info');
@@ -399,27 +523,70 @@ const GameUI = {
     if (data.currentTurn === this.mySeat && !data.completed) {
       this.showPanel('vakhai');
       document.getElementById('vakhai-desc').textContent = 'Your turn! Declare vakhai or pass.';
+      // Ensure buttons are re-enabled
+      document.querySelectorAll('#vakhai-panel .btn-action').forEach(b => b.disabled = false);
     } else if (!data.completed) {
       this.hideAllPanels();
     }
   },
 
+  onVakhaiTrickStart(data) {
+    this.hideAllPanels();
+    document.getElementById('phase-display').textContent = 'Vakhai ▶ Tricks';
+    const name = data.declarerName || this.getPlayerName(data.vakhaiDeclarer);
+    const stake = data.vakhaiStake || '?';
+    Animations.showCenterDisplay(
+      'VAKHAI DECLARED!',
+      `<div style="text-align:center;font-size:1.1rem">
+        <strong style="color:var(--gold)">${name}</strong> declared Vakhai<br>
+        <span style="color:#f59e0b">Stake: ${stake} marks</span><br>
+        <span style="font-size:0.9rem;opacity:0.8">Must win all 4 tricks!</span>
+      </div>`,
+      3500
+    );
+  },
+
   onVakhaiResults(results) {
     this.hideAllPanels();
-    results.forEach(r => {
-      const name = this.getPlayerName(r.seat);
-      if (r.won && !r.fromChallenge) {
-        Animations.showToast(`${name} won vakhai! (+${r.marks} marks)`, 'success');
-      } else if (!r.won && r.marks < 0) {
-        Animations.showToast(`${name} lost vakhai! (${r.marks} marks)`, 'error');
+    if (!Array.isArray(results)) return;
+
+    // Determine overall outcome
+    const declarer = results.find(r => !r.fromChallenge);
+    if (declarer) {
+      if (declarer.won) {
+        const name = this.getPlayerName(declarer.seat);
+        Animations.showToast(`🏆 ${name} won Vakhai! (+${declarer.marks} marks)`, 'success');
+        Animations.showCenterDisplay(
+          '✅ VAKHAI WIN!',
+          `<span style="color:var(--gold);font-size:1.3rem">${name} wins ${declarer.marks} marks!</span>`,
+          3000
+        );
+      } else {
+        const name = this.getPlayerName(declarer.seat);
+        const stake = declarer.stake;
+        Animations.showToast(`💥 ${name} lost Vakhai! Others get +${stake} marks`, 'error');
+        Animations.showCenterDisplay(
+          '❌ VAKHAI FAILED!',
+          `<span style="color:#ef4444;font-size:1.1rem">${name} failed.<br>Each other player gets +${stake} marks.</span>`,
+          3500
+        );
       }
-    });
+    }
   },
 
   sendVakhai(action, stake) {
+    // Immediately disable all Vakhai buttons to prevent double-fire
+    const vBtns = document.querySelectorAll('#vakhai-panel .btn-action');
+    vBtns.forEach(b => { b.disabled = true; });
+
     SocketClient.emit('game:vakhai', { action, stake }, (res) => {
-      if (!res.success) Animations.showToast(res.error, 'error');
-      else this.hideAllPanels();
+      if (!res.success) {
+        Animations.showToast(res.error, 'error');
+        // Re-enable only if server rejected (e.g., wrong turn, bad stake)
+        vBtns.forEach(b => { b.disabled = false; });
+      } else {
+        this.hideAllPanels();
+      }
     });
   },
 
@@ -653,8 +820,18 @@ const GameUI = {
   onMarriageDeclared(data) {
     const name = this.getPlayerName(data.seat);
     const suitIcon = { 'spades': '♠', 'hearts': '♥', 'diamonds': '♦', 'clubs': '♣' }[data.suit];
-    Animations.showToast(`${name} declared Marriage (${suitIcon})! Target adapted by ${data.targetAdj > 0 ? '+' : ''}${data.targetAdj}`, 'info');
-    document.getElementById('game-target-score').textContent = data.targetScore;
+    const color = ['hearts','diamonds'].includes(data.suit) ? '#ef4444' : '#fff';
+    
+    Animations.showCenterDisplay(
+      '💍 MARRIAGE DECLARED',
+      `<span style="color: ${color}; font-size: 2rem;">${suitIcon}</span><br><span style="font-size:1rem;color:var(--gold);">${name}</span>`,
+      2500
+    );
+    
+    setTimeout(() => {
+      Animations.showToast(`Target score adjusted by ${data.targetAdj > 0 ? '+' : ''}${data.targetAdj}`, 'info');
+      document.getElementById('game-target-score').textContent = data.targetScore;
+    }, 2000);
   },
 
   onTrickComplete(data) {
@@ -707,6 +884,41 @@ const GameUI = {
     }
   },
 
+  checkMarriageOptions(state) {
+    const ma = document.getElementById('marriage-actions');
+    if (!ma || !state) return;
+
+    if (!state.marriageEligible) {
+      ma.classList.add('hidden');
+      return;
+    }
+
+    // Check which suits have both K and Q
+    const hand = state.myHand || [];
+    const suits = ['spades', 'hearts', 'diamonds', 'clubs'];
+    const validSuits = suits.filter(suit => {
+      const hasKing = hand.some(c => c.rank === 'K' && c.suit === suit);
+      const hasQueen = hand.some(c => c.rank === 'Q' && c.suit === suit);
+      // Ensure we haven't already declared it
+      const alreadyDeclared = state.marriages && state.marriages.some(m => m.seat === this.mySeat && m.suit === suit);
+      return hasKing && hasQueen && !alreadyDeclared;
+    });
+
+    if (validSuits.length > 0) {
+      const select = document.getElementById('marriage-suit-select');
+      select.innerHTML = '';
+      validSuits.forEach(suit => {
+        const opt = document.createElement('option');
+        opt.value = suit;
+        opt.textContent = `${{ spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }[suit] || suit}`;
+        select.appendChild(opt);
+      });
+      ma.classList.remove('hidden');
+    } else {
+      ma.classList.add('hidden');
+    }
+  },
+
   playCard(card) {
     // Hide marriage actions immediately if they exist since we played
     const marriageActions = document.getElementById('marriage-actions');
@@ -737,52 +949,104 @@ const GameUI = {
   updateTurnIndicator(state) {
     const indicator = document.getElementById('turn-indicator');
     const text = document.getElementById('turn-text');
+    if (!indicator || !text) return;
     let currentTurn = null;
 
-    if (state.phase === 'VAKHAI' && state.vakhai) currentTurn = state.vakhai.currentTurn;
-    else if (state.phase === 'BIDDING' && state.bidding) currentTurn = state.bidding.currentTurn;
-    else if (state.phase === 'TRICK_PLAY' && state.trickPlay) currentTurn = state.trickPlay.currentTurn;
+    switch (state.phase) {
+      case 'VAKHAI':
+        currentTurn = state.vakhai?.currentTurn;
+        break;
+      case 'BIDDING':
+        currentTurn = state.bidding?.currentTurn;
+        break;
+      case 'HUKUM_SELECT':
+      case 'PARTNER_SELECT':
+        currentTurn = state.bidWinner;
+        break;
+      case 'TRICK_PLAY':
+        currentTurn = state.trickPlay?.currentTurn;
+        break;
+    }
+
+    // Clear all active-turn classes first
+    document.querySelectorAll('.player-avatar').forEach(el => el.classList.remove('active-turn'));
+    document.querySelectorAll('.my-player-avatar').forEach(el => el.classList.remove('active-turn'));
+
+    if (currentTurn) {
+      const pos = this.getSeatPosition(currentTurn);
+      if (pos === 'bottom') {
+        const myAv = document.getElementById('my-player-avatar');
+        if (myAv) myAv.classList.add('active-turn');
+      } else if (pos) {
+        const opAv = document.getElementById(`avatar-${pos}`);
+        if (opAv) opAv.classList.add('active-turn');
+      }
+    }
 
     if (currentTurn === this.mySeat) {
       indicator.classList.remove('hidden');
-      indicator.classList.add('turn-pulse');
-      indicator.style.background = '';
+      indicator.classList.add('my-turn');
       let msg = '🎯 Your Turn!';
-      // Feature: Follow Suit message
       if (state.phase === 'TRICK_PLAY' && state.trickPlay) {
-        if (state.trickPlay.currentTrick.length === 0) {
-           msg = '🎯 You start the trick!';
+        if (state.trickPlay.currentTrick?.length === 0) {
+           msg = '🎯 You lead the trick!';
         } else if (state.trickPlay.leadSuit) {
            const hand = state.myHand || [];
            const leadSuit = state.trickPlay.leadSuit;
            const hasLeadSuit = hand.some(c => c.suit === leadSuit);
            if (hasLeadSuit) {
               const symbol = { spades: '♠', hearts: '♥', diamonds: '♦', clubs: '♣' }[leadSuit];
-              msg = `🎯 Follow suit (${symbol} required)`;
+              msg = `🎯 Follow suit ${symbol}!`;
            }
         }
+      } else if (state.phase === 'HUKUM_SELECT') {
+        msg = '🎯 Choose your trump suit!';
+      } else if (state.phase === 'PARTNER_SELECT') {
+        msg = '🎯 Choose your partner card!';
+      } else if (state.phase === 'VAKHAI') {
+        if (state.vakhai?.state === 'PLAYING') {
+           if (state.vakhai.currentTrick?.length === 0) {
+              msg = '🎯 You lead the Vakhai trick!';
+           } else {
+              msg = '🎯 Play higher suit if possible!';
+           }
+        } else {
+           msg = '🎯 Your turn — Vakhai or Pass!';
+        }
+      } else if (state.phase === 'BIDDING') {
+        msg = '🎯 Your turn to bid!';
       }
       text.textContent = msg;
-      
       Animations.setActivePlayer('bottom');
     } else if (currentTurn) {
-      indicator.classList.remove('hidden');
-      indicator.classList.remove('turn-pulse');
-      indicator.style.background = 'rgba(0, 0, 0, 0.4)';
+      indicator.classList.remove('hidden', 'my-turn');
       const name = this.getPlayerName(currentTurn);
-      
       let msg = `⏳ ${name}'s Turn`;
-      if (state.phase === 'TRICK_PLAY' && state.trickPlay?.currentTrick?.length === 0) {
-         msg = `🎲 ${name} starts the trick`;
+      if (state.phase === 'TRICK_PLAY') {
+         if (state.trickPlay?.currentTrick?.length === 0) {
+            msg = `🎲 ${name} leads the trick`;
+         } else {
+            msg = `⏳ ${name}'s Turn`;
+         }
+      } else if (state.phase === 'HUKUM_SELECT') {
+         msg = `⏳ ${name} is choosing trump...`;
+      } else if (state.phase === 'PARTNER_SELECT') {
+         msg = `⏳ ${name} is choosing partner card...`;
+      } else if (state.phase === 'VAKHAI') {
+         if (state.vakhai?.state === 'PLAYING') {
+            msg = `⏳ ${name} is playing Vakhai...`;
+         } else {
+            msg = `⏳ ${name} — Vakhai or Pass?`;
+         }
+      } else if (state.phase === 'BIDDING') {
+         msg = `⏳ ${name} is bidding...`;
       }
       text.textContent = msg;
-      
       const pos = this.getSeatPosition(currentTurn);
       Animations.setActivePlayer(pos);
     } else {
-      indicator.classList.remove('turn-pulse');
       indicator.classList.add('hidden');
-      indicator.style.background = '';
+      indicator.classList.remove('my-turn');
       Animations.setActivePlayer(null);
     }
   },
@@ -793,21 +1057,66 @@ const GameUI = {
   onRoundEnd(data) {
     document.getElementById('phase-display').textContent = 'Round End';
     this.hideAllPanels();
-    document.getElementById('turn-indicator').classList.add('hidden');
+    const ind = document.getElementById('turn-indicator');
+    if (ind) { ind.classList.add('hidden'); ind.classList.remove('my-turn'); }
 
     const result = data.roundResult;
     this.updateScoreboard(data.scoring);
 
     const overlay = document.getElementById('round-result-overlay');
-    const title = document.getElementById('round-result-title');
+    const titleEl = document.getElementById('round-result-title');
     const content = document.getElementById('round-result-content');
 
-    title.textContent = result.bidSuccess ? '✅ Bid Successful!' : '❌ Bid Failed!';
+    // Vakhai-only round
+    if (result.isVakhaiRound) {
+      const declName = this.getPlayerName(result.vakhaiDeclarer);
+      if (result.vakhaiDefeated) {
+        titleEl.textContent = `❌ Vakhai Failed — ${declName} lost!`;
+      } else {
+        titleEl.textContent = `✅ Vakhai Won — ${declName} wins!`;
+      }
 
-    let html = `<p style="margin-bottom:12px">Bid: <strong>${result.bidAmount}</strong> by ${this.getPlayerName(result.bidderSeat)}</p>`;
-    html += `<p style="margin-bottom:12px">Bidder Team: <strong>${result.bidderTeamPoints}</strong> pts | Opponents: <strong>${result.opponentTeamPoints}</strong> pts</p>`;
+      let html = `<div class="round-meta">`;
+      html += `<div class="round-meta-chip">Vakhai by <strong>${declName}</strong></div>`;
+      html += `<div class="round-meta-chip">Stake: <strong>${result.vakhaiStake} marks</strong></div>`;
+      if (result.vakhaiDefeated) {
+        html += `<div class="round-meta-chip" style="color:var(--error)">Each other player gets +${result.vakhaiStake} marks</div>`;
+      } else {
+        html += `<div class="round-meta-chip" style="color:var(--success)">${declName} gets +${result.vakhaiStake} marks</div>`;
+      }
+      html += `</div>`;
+
+      html += '<table class="score-table"><thead><tr><th>Player</th><th>This Round</th><th>Total</th></tr></thead><tbody>';
+      for (let s = 1; s <= 4; s++) {
+        const name = this.getPlayerName(s);
+        const rm = result.roundMarks ? (result.roundMarks[s] || 0) : 0;
+        const tm = result.totalMarks ? (result.totalMarks[s] || 0) : 0;
+        const rmClass = rm > 0 ? 'score-positive' : rm < 0 ? 'score-negative' : '';
+        html += `<tr><td>${name}</td><td class="${rmClass}">${rm > 0 ? '+' : ''}${rm}</td><td><strong>${tm}</strong></td></tr>`;
+      }
+      html += '</tbody></table>';
+      content.innerHTML = html;
+      overlay.classList.remove('hidden');
+      return;
+    }
+
+    // Normal bid round
+    titleEl.textContent = result.bidSuccess ? '✅ Bid Successful!' : '❌ Bid Failed!';
+
+    const bidderName = this.getPlayerName(result.bidderSeat);
+    const finalTarget = data.roundResult.finalTarget ?? result.bidAmount;
+    const origBid = result.bidAmount;
+
+    let html = `<div class="round-meta">`;
+    html += `<div class="round-meta-chip">Bid by <strong>${bidderName}</strong></div>`;
+    html += `<div class="round-meta-chip">Original bid: <strong>${origBid}</strong></div>`;
+    if (finalTarget !== origBid) {
+      html += `<div class="round-meta-chip">Adjusted target: <strong style="color:var(--gold)">${finalTarget}</strong></div>`;
+    }
+    html += `<div class="round-meta-chip">Bidder pts: <strong>${result.bidderTeamPoints}</strong> | Opp pts: <strong>${result.opponentTeamPoints}</strong></div>`;
+    html += `</div>`;
+
     html += '<table class="score-table"><thead><tr><th>Player</th><th>Round</th><th>Total</th></tr></thead><tbody>';
-
     for (let s = 1; s <= 4; s++) {
       const name = this.getPlayerName(s);
       const rm = result.roundMarks[s];

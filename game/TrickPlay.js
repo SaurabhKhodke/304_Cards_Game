@@ -235,7 +235,6 @@ class TrickPlay {
       currentTurn: this.currentTurn,
       leadSuit: this.leadSuit,
       trickHistory: this.trickHistory,
-      trickHistory: this.trickHistory,
       completed: this.completed,
       partnerKilled: this.partnerKilled,
       partnerCalledOut: this.partnerCalledOut,

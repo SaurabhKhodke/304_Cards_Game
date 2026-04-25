@@ -22,12 +22,16 @@ const App = {
    */
   showScreen(screenName) {
     // Hide all screens
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.screen').forEach(s => {
+      s.classList.remove('active');
+      s.style.display = 'none';
+    });
 
     // Show target screen
     const screen = document.getElementById(`screen-${screenName}`);
     if (screen) {
       screen.classList.add('active');
+      screen.style.display = '';
       this.currentScreen = screenName;
     }
   }

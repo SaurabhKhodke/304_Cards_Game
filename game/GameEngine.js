@@ -70,6 +70,7 @@ class GameEngine {
     }
     
     // Reset per-round state
+    this.roundTerminated = false;   // ← must clear so round-2+ actions aren't blocked
     this.hukumSuit = null;
     this.partnerCard = null;
     this.bidWinner = null;
@@ -130,16 +131,96 @@ class GameEngine {
 
     if (!result.success) return result;
 
-    // If vakhai phase is complete, resolve it
-    if (this.vakhai.completed) {
-      this.currentVakhaiResults = this.vakhai.resolve(this.firstHands);
+    const vState = this.vakhai.getState();
+
+    // All 4 players passed — no vakhai declared, proceed to normal game
+    if (this.vakhai.completed && this.vakhai.vakhaiDeclarer === null) {
+      // No one declared — results are empty, move on
+      this.currentVakhaiResults = [];
+      return {
+        success: true,
+        state: vState,
+        completed: true,
+        noDeclarer: true,  // signal: no vakhai declared, proceed normally
+        results: this.currentVakhaiResults
+      };
+    }
+
+    if (vState.state === 'PLAYING') {
+      return {
+        success: true,
+        state: vState,
+        completed: false,
+        vakhaiActive: true  // signal: vakhai tricks starting
+      };
     }
 
     return {
       success: true,
-      state: this.vakhai.getState(),
-      completed: this.vakhai.completed,
-      results: this.vakhai.completed ? this.currentVakhaiResults : null
+      state: vState,
+      completed: false
+    };
+  }
+
+  // ============================================================
+  // Phase: Vakhai Card Play (during VAKHAI PLAYING state)
+  // ============================================================
+  handleVakhaiCardPlay(seatNumber, cardId) {
+    if (this.phase !== PHASES.VAKHAI) {
+      return { success: false, error: 'Not in vakhai phase' };
+    }
+    if (!this.vakhai || this.vakhai.state !== 'PLAYING') {
+      return { success: false, error: 'Vakhai is not in playing state' };
+    }
+
+    // Find the card in player's hand
+    const card = this.hands[seatNumber].find(c => c.id === cardId);
+    if (!card) {
+      return { success: false, error: 'Card not in your hand' };
+    }
+
+    const result = this.vakhai.playCard(seatNumber, card, this.hands[seatNumber]);
+    if (!result.success) return result;
+
+    // Remove card from hand
+    this.hands[seatNumber] = this.hands[seatNumber].filter(c => c.id !== cardId);
+
+    // If vakhai is now complete (win or loss), compute scoring and end
+    if (result.vakhaiComplete) {
+      const vakhaiResults = this.vakhai.results;
+      this.currentVakhaiResults = vakhaiResults;
+
+      // Apply marks to the scoring module
+      const roundMarks = { 1: 0, 2: 0, 3: 0, 4: 0 };
+      for (const r of vakhaiResults) {
+        roundMarks[r.seat] = (roundMarks[r.seat] || 0) + r.marks;
+      }
+      this.scoring.applyVakhaiRound({
+        vakhaiDeclarer: this.vakhai.vakhaiDeclarer,
+        vakhaiStake: this.vakhai.vakhaiStake,
+        vakhaiDefeated: this.vakhai.vakhaiDefeated,
+        roundMarks,
+        roundNumber: this.roundNumber
+      });
+
+      this.phase = PHASES.ROUND_END;
+      return {
+        ...result,
+        playedCard: card,
+        vakhaiRoundComplete: true,
+        vakhaiResults,
+        roundMarks,
+        vakhaiDeclarer: this.vakhai.vakhaiDeclarer,
+        vakhaiStake: this.vakhai.vakhaiStake,
+        vakhaiDefeated: this.vakhai.vakhaiDefeated,
+        scoring: this.scoring.getState()
+      };
+    }
+
+    return {
+      ...result,
+      playedCard: card,
+      vakhaiRoundComplete: false
     };
   }
 
@@ -236,23 +317,20 @@ class GameEngine {
       return { success: false, error: 'Only the bid winner can select partner card' };
     }
 
-    // Validate card exists in the deck
     const allCards = [];
     for (let s = 1; s <= 4; s++) {
       allCards.push(...this.hands[s]);
     }
-    const cardExists = allCards.some(c => c.id === cardId);
-    if (!cardExists) {
+    if (!allCards.some(c => c.id === cardId)) {
       return { success: false, error: 'Invalid card selection' };
     }
 
-    // Bidder cannot select a card they already hold
-    const bidderOwnsCard = this.hands[seatNumber].some(c => c.id === cardId);
-    if (bidderOwnsCard) {
+    if (this.hands[seatNumber].some(c => c.id === cardId)) {
       return { success: false, error: 'Invalid partner card selection. You cannot select a card you already hold.' };
     }
 
     this.partnerCard = cardId;
+    this.phase = PHASES.TRICK_PLAY; // Instantly advance Phase
     return { success: true, partnerCard: cardId };
   }
 

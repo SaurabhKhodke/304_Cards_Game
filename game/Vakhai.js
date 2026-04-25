@@ -1,177 +1,325 @@
 // ============================================================
-// Vakhai Phase - Challenge phase after first 4 cards
+// Vakhai Phase - Challenge mini-round (first 4 cards only)
 // ============================================================
-// Vakhai rules are configurable. The default compares hands by
-// total point value of the first 4 cards.
-
-const { calculatePoints } = require('./Deck');
-
-/**
- * Available vakhai comparison rules
- * Each rule is a function: (hand4cards) => number (higher = better)
- */
-const VAKHAI_RULES = {
-  // Default: total point value of 4 cards
-  points: (cards) => calculatePoints(cards),
-
-  // Alternative: count of high-value cards (J, 9, A)
-  highCards: (cards) => {
-    return cards.filter(c => ['J', '9', 'A'].includes(c.rank)).length * 100
-      + calculatePoints(cards);
-  },
-
-  // Alternative: all same suit bonus
-  suitBonus: (cards) => {
-    const suits = new Set(cards.map(c => c.suit));
-    const baseScore = calculatePoints(cards);
-    // Bonus if all 4 cards are same suit
-    if (suits.size === 1) return baseScore + 200;
-    if (suits.size === 2) return baseScore + 50;
-    return baseScore;
-  }
-};
+// STATE MACHINE:
+//   DECLARING  → each player in turn order declares 3, 5, or passes
+//   PLAYING    → only if exactly one declared; declarer leads 4 tricks
+//   RESOLVED   → terminal; results are populated
+// ============================================================
 
 class VakhaiPhase {
-  constructor(compareRule = 'points') {
-    this.compareRule = compareRule;
-    this.declarations = {};    // { seatNumber: { stake, declared: true/false } }
-    this.results = [];         // Results after resolution
+  constructor() {
+    // === Declaring state ===
+    this.state = 'DECLARING';
+    this.declarations = {}; // seatNumber → { stake, declared }
+    this.vakhaiDeclarer = null;
+    this.vakhaiStake = 0;
+
+    // Turn tracking (used in both DECLARING and PLAYING)
+    this.turnOrder = [];
+    this.currentTurn = null;
+    this.actionsCount = 0; // how many players have declared/passed
+
+    // === Playing state ===
+    this.leadSuit = null;
+    this.currentTrick = [];
+    this.trickHistory = [];
+    this.trickCount = 0;     // tricks completed in PLAYING phase
+    this.tricksWon = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    this.vakhaiDefeated = false;
+
+    // === Terminal state ===
     this.completed = false;
-    this.currentTurn = null;   // Current player to decide
-    this.turnOrder = [];       // Clockwise order
+    this.results = [];
   }
 
-  /**
-   * Initialize vakhai phase
-   * @param {number} startSeat - seat that goes first
-   */
+  // ------------------------------------------------------------------
+  // Initialization
+  // ------------------------------------------------------------------
+
+  /** Must be called once before any actions. startSeat = seat left of dealer. */
   initialize(startSeat) {
+    this._buildTurnOrder(startSeat);
+    this.currentTurn = this.turnOrder[0];
+    this.declarations = {};
+    this.actionsCount = 0;
+  }
+
+  _buildTurnOrder(startSeat) {
     this.turnOrder = [];
     for (let i = 0; i < 4; i++) {
       this.turnOrder.push(((startSeat - 1 + i) % 4) + 1);
     }
-    this.currentTurn = this.turnOrder[0];
-    this.declarations = {};
   }
 
+  // ------------------------------------------------------------------
+  // DECLARING phase actions
+  // ------------------------------------------------------------------
+
   /**
-   * Player declares vakhai with a stake
+   * Declare vakhai with a stake of 3 or 5.
+   * Only the first declaration is accepted; subsequent declarers get rejected.
    */
   declare(seatNumber, stake) {
+    if (this.state !== 'DECLARING') {
+      return { success: false, error: 'Not in declaring phase' };
+    }
     if (seatNumber !== this.currentTurn) {
       return { success: false, error: 'Not your turn' };
     }
-    if (stake < 1) {
-      return { success: false, error: 'Invalid stake' };
+    if (stake !== 3 && stake !== 5) {
+      return { success: false, error: 'Stake must be 3 or 5' };
     }
+    if (this.vakhaiDeclarer !== null) {
+      // Someone already declared — this player must pass
+      return { success: false, error: 'Vakhai already declared by another player; you must pass' };
+    }
+
     this.declarations[seatNumber] = { stake, declared: true };
-    this.advanceTurn();
+    this.vakhaiDeclarer = seatNumber;
+    this.vakhaiStake = stake;
+    this._advanceDeclaring();
     return { success: true };
   }
 
-  /**
-   * Player passes on vakhai
-   */
+  /** Pass on vakhai. */
   pass(seatNumber) {
+    if (this.state !== 'DECLARING') {
+      return { success: false, error: 'Not in declaring phase' };
+    }
     if (seatNumber !== this.currentTurn) {
       return { success: false, error: 'Not your turn' };
     }
+
     this.declarations[seatNumber] = { stake: 0, declared: false };
-    this.advanceTurn();
+    this._advanceDeclaring();
     return { success: true };
   }
 
-  /**
-   * Advance to next player's turn
-   */
-  advanceTurn() {
-    const currentIndex = this.turnOrder.indexOf(this.currentTurn);
-    if (currentIndex < this.turnOrder.length - 1) {
-      this.currentTurn = this.turnOrder[currentIndex + 1];
+  _advanceDeclaring() {
+    this.actionsCount++;
+
+    if (this.actionsCount < 4) {
+      // Move to next player in turn order
+      this.currentTurn = this.turnOrder[this.actionsCount];
+      return;
+    }
+
+    // All 4 players have acted — resolve declaring phase
+    if (this.vakhaiDeclarer !== null) {
+      // Transition to PLAYING: declarer leads
+      this.state = 'PLAYING';
+      this._buildTurnOrder(this.vakhaiDeclarer);
+      this.currentTurn = this.vakhaiDeclarer;
+      this.leadSuit = null;
+      this.currentTrick = [];
     } else {
-      this.currentTurn = null; // All players have acted
+      // No one declared — Vakhai skipped, proceed to normal game
+      this.state = 'RESOLVED';
       this.completed = true;
+      this.results = []; // empty = no vakhai happened
     }
   }
 
+  // ------------------------------------------------------------------
+  // PLAYING phase actions
+  // ------------------------------------------------------------------
+
   /**
-   * Check if any player declared vakhai
+   * Validate a card play against Vakhai rules:
+   *   1. Must follow lead suit if possible.
+   *   2. Must play a higher card of lead suit if possible.
    */
-  hasDeclarations() {
-    return Object.values(this.declarations).some(d => d.declared);
+  validatePlay(card, hand) {
+    // Leading the trick — always valid
+    if (this.currentTrick.length === 0) return true;
+
+    const hasLeadSuit = hand.some(c => c.suit === this.leadSuit);
+    if (!hasLeadSuit) return true; // Can dump any card
+
+    if (card.suit !== this.leadSuit) {
+      return 'You must follow the lead suit.';
+    }
+
+    // Find highest lead-suit strength already in the trick
+    let highestInTrick = -1;
+    for (const p of this.currentTrick) {
+      if (p.card.suit === this.leadSuit && p.card.strength > highestInTrick) {
+        highestInTrick = p.card.strength;
+      }
+    }
+
+    // Check if player has a stronger card of the lead suit
+    const canBeat = hand.some(c => c.suit === this.leadSuit && c.strength > highestInTrick);
+    if (canBeat && card.strength <= highestInTrick) {
+      return 'You must play a higher value card of the lead suit since you have one.';
+    }
+
+    return true;
   }
 
   /**
-   * Resolve vakhai challenges
-   * @param {Object} hands - { seatNumber: [4 cards] }
-   * @returns {Array} results - [{ seat, stake, won, marks }]
+   * Play a card during the PLAYING phase.
+   * Returns { success, trickComplete, trickResult, vakhaiComplete, vakhaiDefeated }
    */
-  resolve(hands) {
-    if (!this.hasDeclarations()) {
-      return []; // No vakhai declared
+  playCard(seatNumber, cardObj, playerHand) {
+    if (this.state !== 'PLAYING') {
+      return { success: false, error: 'Vakhai is not in playing phase' };
+    }
+    if (this.completed) {
+      return { success: false, error: 'Vakhai already completed' };
+    }
+    if (seatNumber !== this.currentTurn) {
+      return { success: false, error: 'Not your turn' };
     }
 
-    const ruleFn = VAKHAI_RULES[this.compareRule] || VAKHAI_RULES.points;
+    const validation = this.validatePlay(cardObj, playerHand);
+    if (validation !== true) {
+      return { success: false, error: validation };
+    }
+
+    // Record lead suit on first card of trick
+    if (this.currentTrick.length === 0) {
+      this.leadSuit = cardObj.suit;
+    }
+
+    this.currentTrick.push({ seat: seatNumber, card: cardObj });
+
+    if (this.currentTrick.length === 4) {
+      return this._completeTrick();
+    }
+
+    // Advance turn within trick
+    const idx = this.turnOrder.indexOf(seatNumber);
+    this.currentTurn = this.turnOrder[(idx + 1) % 4];
+    return { success: true, trickComplete: false };
+  }
+
+  _completeTrick() {
+    // Winner = highest card of lead suit (no trump in vakhai)
+    let winnerPlay = this.currentTrick[0];
+    for (let i = 1; i < this.currentTrick.length; i++) {
+      const p = this.currentTrick[i];
+      if (p.card.suit === this.leadSuit && p.card.strength > winnerPlay.card.strength) {
+        winnerPlay = p;
+      }
+    }
+    // Edge case: if leader's card wasn't kept (shouldn't happen but guard it)
+    if (winnerPlay.card.suit !== this.leadSuit) {
+      winnerPlay = this.currentTrick[0]; // fallback to lead
+    }
+
+    const winningSeat = winnerPlay.seat;
+
+    // Archive trick
+    this.trickHistory.push({
+      trickNumber: this.trickCount + 1,
+      cards: this.currentTrick.map(p => ({ seat: p.seat, card: p.card })),
+      winner: winningSeat,
+      leadSuit: this.leadSuit
+    });
+    this.tricksWon[winningSeat] = (this.tricksWon[winningSeat] || 0) + 1;
+    this.trickCount++;
+
+    const trickResult = {
+      winningSeat,
+      winningCard: winnerPlay.card,
+      trickNumber: this.trickCount
+    };
+
+    // ── CRITICAL: Check loss IMMEDIATELY ──────────────────────────────
+    if (winningSeat !== this.vakhaiDeclarer) {
+      // Declarer lost — terminate Vakhai NOW, don't play remaining tricks
+      this.vakhaiDefeated = true;
+      this.state = 'RESOLVED';
+      this.completed = true;
+      this.results = this._resolveResults();
+      return {
+        success: true,
+        trickComplete: true,
+        trickResult,
+        vakhaiComplete: true,
+        vakhaiDefeated: true
+      };
+    }
+
+    // Declarer won this trick
+    if (this.trickCount === 4) {
+      // Won all 4 tricks — success
+      this.state = 'RESOLVED';
+      this.completed = true;
+      this.results = this._resolveResults();
+      return {
+        success: true,
+        trickComplete: true,
+        trickResult,
+        vakhaiComplete: true,
+        vakhaiDefeated: false
+      };
+    }
+
+    // More tricks remain — reset for next trick, winner leads
+    this.currentTrick = [];
+    this.leadSuit = null;
+    this._buildTurnOrder(winningSeat);
+    this.currentTurn = winningSeat;
+    return { success: true, trickComplete: true, trickResult, vakhaiComplete: false };
+  }
+
+  // ------------------------------------------------------------------
+  // Scoring
+  // ------------------------------------------------------------------
+
+  _resolveResults() {
+    if (this.vakhaiDeclarer === null) return [];
+
+    const stake = this.vakhaiStake;
+    const won = !this.vakhaiDefeated;
     const results = [];
 
-    // Calculate hand scores for all players
-    const scores = {};
-    for (let seat = 1; seat <= 4; seat++) {
-      scores[seat] = ruleFn(hands[seat]);
-    }
-
-    // For each declaration, compare against all other players
-    for (const [seatStr, decl] of Object.entries(this.declarations)) {
-      if (!decl.declared) continue;
-      const seat = parseInt(seatStr);
-      const declarerScore = scores[seat];
-      
-      // Declarer wins if they have the highest score among all players
-      let won = true;
-      for (let otherSeat = 1; otherSeat <= 4; otherSeat++) {
-        if (otherSeat === seat) continue;
-        if (scores[otherSeat] >= declarerScore) {
-          won = false;
-          break;
-        }
-      }
-
-      if (won) {
-        // Declarer wins: gets the declared marks
-        results.push({ seat, stake: decl.stake, won: true, marks: decl.stake });
-      } else {
-        // Declarer loses: other 3 players each get the declared marks
-        results.push({ seat, stake: decl.stake, won: false, marks: -decl.stake });
-        // Other players each get the stake
-        for (let otherSeat = 1; otherSeat <= 4; otherSeat++) {
-          if (otherSeat !== seat) {
-            results.push({
-              seat: otherSeat,
-              stake: decl.stake,
-              won: true,
-              marks: decl.stake,
-              fromChallenge: seat
-            });
-          }
+    if (won) {
+      // Declarer gets +stake
+      results.push({ seat: this.vakhaiDeclarer, stake, won: true, marks: stake });
+    } else {
+      // Declarer gets 0 (or we track it as 0 for that round)
+      results.push({ seat: this.vakhaiDeclarer, stake, won: false, marks: 0 });
+      // Each of the other 3 players gets +stake
+      for (let i = 1; i <= 4; i++) {
+        if (i !== this.vakhaiDeclarer) {
+          results.push({ seat: i, stake, won: true, marks: stake, fromChallenge: this.vakhaiDeclarer });
         }
       }
     }
-
-    this.results = results;
     return results;
   }
 
-  /**
-   * Get current state for clients
-   */
+  // Public alias used by GameEngine
+  resolveVakhai() {
+    return this._resolveResults();
+  }
+
+  // ------------------------------------------------------------------
+  // State snapshot
+  // ------------------------------------------------------------------
+
   getState() {
     return {
+      state: this.state,           // 'DECLARING' | 'PLAYING' | 'RESOLVED'
       currentTurn: this.currentTurn,
+      actionsCount: this.actionsCount,
       declarations: this.declarations,
+      vakhaiDeclarer: this.vakhaiDeclarer,
+      vakhaiStake: this.vakhaiStake,
       completed: this.completed,
-      results: this.results
+      results: this.results,
+      leadSuit: this.leadSuit,
+      currentTrick: this.currentTrick,
+      trickCount: this.trickCount,
+      tricksWon: this.tricksWon,
+      vakhaiDefeated: this.vakhaiDefeated,
+      trickHistory: this.trickHistory
     };
   }
 }
 
-module.exports = { VakhaiPhase, VAKHAI_RULES };
+module.exports = { VakhaiPhase };

@@ -74,12 +74,19 @@ const LobbyUI = {
       App.showScreen('game');
       GameUI.onGameStarted(data);
     });
+    // Handle hydration for reconnected players who missed game:started
+    // (game:hydrate is handled directly in socket.js, but we also
+    //  ensure LobbyUI.mySeat stays in sync)
+    SocketClient.on('game:hydrate', (payload) => {
+      if (payload.seat) this.mySeat = payload.seat;
+    });
   },
 
   createRoom() {
     SocketClient.emit('room:create', null, (res) => {
       if (res.success) {
         this.currentRoomId = res.roomId;
+        SocketClient.roomId = res.roomId;          // persist for reconnect
         SocketClient.socket.roomId = res.roomId;
         document.getElementById('room-code-display').textContent = res.roomId;
         document.getElementById('room-area').classList.remove('hidden');
@@ -103,6 +110,7 @@ const LobbyUI = {
     SocketClient.emit('room:join', code, (res) => {
       if (res.success) {
         this.currentRoomId = code;
+        SocketClient.roomId = code;               // persist for reconnect
         SocketClient.socket.roomId = code;
         document.getElementById('room-code-display').textContent = code;
         document.getElementById('room-area').classList.remove('hidden');

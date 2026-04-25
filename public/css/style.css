@@ -84,8 +84,10 @@ h1,h2,h3,h4 { font-family: 'Outfit', sans-serif; }
 .hidden { display: none !important; }
 
 /* ============ SCREENS ============ */
-.screen { display: none; position: relative; min-height: 100dvh; }
-.screen.active { display: flex; flex-direction: column; }
+.screen { display: none; position: relative; }
+.screen.active { display: flex; flex-direction: column; height: 100dvh; overflow: hidden; }
+/* Auth and lobby need scrolling, not hard clip */
+#screen-auth.active, #screen-lobby.active { height: auto; min-height: 100dvh; overflow: auto; }
 
 /* ============ CONNECTION BAR ============ */
 .connection-bar {
