@@ -71,8 +71,13 @@ class VakhaiPhase {
       return { success: false, error: 'Stake must be 3 or 5' };
     }
     if (this.vakhaiDeclarer !== null) {
-      // Someone already declared — this player must pass
-      return { success: false, error: 'Vakhai already declared by another player; you must pass' };
+      if (stake <= this.vakhaiStake) {
+        return { success: false, error: 'Must bid higher than current vakhai stake' };
+      }
+      // Previous declarer is outbid
+      if (this.declarations[this.vakhaiDeclarer]) {
+        this.declarations[this.vakhaiDeclarer].declared = false;
+      }
     }
 
     this.declarations[seatNumber] = { stake, declared: true };
@@ -99,26 +104,26 @@ class VakhaiPhase {
   _advanceDeclaring() {
     this.actionsCount++;
 
-    if (this.actionsCount < 4) {
-      // Move to next player in turn order
-      this.currentTurn = this.turnOrder[this.actionsCount];
+    // End declaring phase if someone bids 5, or if all 4 players have acted
+    if (this.vakhaiStake === 5 || this.actionsCount >= 4) {
+      if (this.vakhaiDeclarer !== null) {
+        // Transition to PLAYING: declarer leads
+        this.state = 'PLAYING';
+        this._buildTurnOrder(this.vakhaiDeclarer);
+        this.currentTurn = this.vakhaiDeclarer;
+        this.leadSuit = null;
+        this.currentTrick = [];
+      } else {
+        // No one declared — Vakhai skipped, proceed to normal game
+        this.state = 'RESOLVED';
+        this.completed = true;
+        this.results = []; // empty = no vakhai happened
+      }
       return;
     }
 
-    // All 4 players have acted — resolve declaring phase
-    if (this.vakhaiDeclarer !== null) {
-      // Transition to PLAYING: declarer leads
-      this.state = 'PLAYING';
-      this._buildTurnOrder(this.vakhaiDeclarer);
-      this.currentTurn = this.vakhaiDeclarer;
-      this.leadSuit = null;
-      this.currentTrick = [];
-    } else {
-      // No one declared — Vakhai skipped, proceed to normal game
-      this.state = 'RESOLVED';
-      this.completed = true;
-      this.results = []; // empty = no vakhai happened
-    }
+    // Move to next player in turn order
+    this.currentTurn = this.turnOrder[this.actionsCount];
   }
 
   // ------------------------------------------------------------------

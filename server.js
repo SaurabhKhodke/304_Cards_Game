@@ -27,6 +27,21 @@ async function boot() {
   const statsModel = require('./db/statsModel');
   const gameHistoryModel = require('./db/gameHistoryModel');
   const { router: authRouter } = require('./routes/auth');
+  const adminRouter = require('./routes/admin');
+
+  // Ensure Admin user exists
+  try {
+    const adminUser = userModel.getUserByUsername('ADMIN');
+    if (!adminUser) {
+      userModel.createUser('ADMIN', 'admin@3490', 'Administrator', 'admin');
+      console.log('Admin user created automatically.');
+    } else if (adminUser.role !== 'admin') {
+      const { runSql } = require('./db/database');
+      runSql("UPDATE users SET role = 'admin' WHERE username = 'ADMIN'");
+    }
+  } catch(e) {
+    console.error('Failed to initialize admin user:', e.message);
+  }
 
   // ============================================================
   // Express Setup
@@ -39,6 +54,7 @@ async function boot() {
 
   // ── API routes FIRST — before static or any fallback ──
   app.use('/api/auth', authRouter);
+  app.use('/api/admin', adminRouter);
 
   // ── Static files ──
   app.use(express.static(path.join(__dirname, 'public')));
@@ -200,6 +216,70 @@ async function boot() {
     });
 
     // ============================================================
+    // ADMIN: Spectate Room
+    // ============================================================
+    socket.on('admin:spectateRoom', (roomId, callback) => {
+      if (typeof callback !== 'function') return;
+      try {
+        if (socket.user.role !== 'admin') {
+          return callback({ success: false, error: 'Unauthorized' });
+        }
+        const room = roomManager.getRoom(roomId.trim().toUpperCase());
+        if (!room) return callback({ success: false, error: 'Room not found' });
+
+        socket.join(room.id);
+        socket.roomId = room.id;
+        socket.isSpectator = true;
+        
+        const resp = { success: true, room: room.getPublicState() };
+        if (room.game) {
+          resp.gameStarted = true;
+          resp.gamePhase = room.game.phase;
+          resp.gameState = room.game.getStateForPlayer(null); // Null seat gets public state
+        }
+        callback(resp);
+      } catch (err) { callback({ success: false, error: err.message }); }
+    });
+
+    // ADMIN: Leave Spectate
+    socket.on('admin:leaveSpectate', (callback) => {
+      if (typeof callback !== 'function') return;
+      try {
+        if (socket.roomId && socket.isSpectator) {
+          socket.leave(socket.roomId);
+          socket.roomId = null;
+          socket.isSpectator = false;
+        }
+        callback({ success: true });
+      } catch (err) { callback({ success: false, error: err.message }); }
+    });
+
+    // ============================================================
+    // ADMIN: Dashboard Live Data
+    // ============================================================
+    socket.on('admin:subscribe', (callback) => {
+      console.log(`[DEBUG] admin:subscribe hit by ${socket.user.username}`);
+      if (typeof callback === 'function') callback({ success: true });
+      try {
+        if (socket.user.role === 'admin') {
+          socket.join('admin_dashboard');
+          console.log(`[DEBUG] Socket ${socket.id} joined admin_dashboard room`);
+          // Send initial snapshot immediately
+          broadcastAdminDashboard(socket);
+        } else {
+          console.log(`[DEBUG] Non-admin tried to subscribe`);
+        }
+      } catch(e) {
+        console.error(`[DEBUG] Error in admin:subscribe:`, e.message);
+      }
+    });
+
+    socket.on('admin:unsubscribe', () => {
+      console.log(`[DEBUG] admin:unsubscribe hit by ${socket.user.username}`);
+      socket.leave('admin_dashboard');
+    });
+
+    // ============================================================
     // GAME: Vakhai Declaration
     // ============================================================
     socket.on('game:vakhai', ({ action, stake }, callback) => {
@@ -254,6 +334,13 @@ async function boot() {
                 ps.emit('game:cardsDealt', { phase: 'second', hand: room.game.hands[s] });
               }
             }
+            io.in(room.id).fetchSockets().then(sockets => {
+              for (const socket of sockets) {
+                if (socket.isSpectator) {
+                  socket.emit('game:cardsDealt', { phase: 'second', hand: null });
+                }
+              }
+            }).catch(()=>{});
             const t2 = scheduleTimer(room, 1800, () => {
               if (room.game.roundTerminated) return;
               const biddingState = room.game.startBidding();
@@ -378,9 +465,15 @@ async function boot() {
         if (!result.success) return callback(result);
         callback({ success: true });
 
+        // Include nextTurn so client can update indicator immediately
+        const trickState = isVakhaiPlaying ? room.game.vakhai : room.game.trickPlay;
         io.to(room.id).emit('game:cardPlayed', {
           seat, cardId,
-          card: result.playedCard
+          card: result.playedCard,
+          nextTurn: trickState ? trickState.currentTurn : null,
+          leadSuit: trickState ? trickState.leadSuit : null,
+          highestTrumpPlayed: trickState ? trickState.highestTrumpPlayed : null,
+          trickComplete: !!result.trickComplete
         });
 
         // ── Vakhai round ended (win OR loss) ──
@@ -432,6 +525,7 @@ async function boot() {
               winner: result.trickResult.winningSeat,
               trickNumber: result.trickResult.trickNumber || 0,
               points: result.trickResult.points || 0,
+              nextTurn: result.trickResult.winningSeat, // winner leads next trick
               partnerRevealed: room.game.trickPlay ? room.game.trickPlay.partnerRevealed : false,
               partnerSeat: (room.game.trickPlay && room.game.trickPlay.partnerRevealed)
                 ? room.game.trickPlay.partnerSeat : null,
@@ -608,6 +702,13 @@ async function boot() {
           ps.emit('game:cardsDealt', { phase: 'first', hand: room.game.hands[s] });
         }
       }
+      io.in(room.id).fetchSockets().then(sockets => {
+        for (const socket of sockets) {
+          if (socket.isSpectator) {
+            socket.emit('game:cardsDealt', { phase: 'first', hand: null });
+          }
+        }
+      }).catch(()=>{});
       scheduleTimer(room, 1200, () => {
         const vakhaiState = room.game.startVakhai();
         io.to(room.id).emit('game:vakhaiStart', vakhaiState);
@@ -778,7 +879,77 @@ async function boot() {
         console.warn(`broadcastGameState: failed for seat ${s}:`, e.message);
       }
     }
+    // Send public state to spectators
+    io.in(room.id).fetchSockets().then(sockets => {
+      const publicState = room.game.getStateForPlayer(null);
+      for (const socket of sockets) {
+        if (socket.isSpectator) {
+          socket.emit('game:state', publicState);
+        }
+      }
+    }).catch(e => console.warn('broadcastGameState spectator error:', e));
   }
+
+  // Admin Dashboard Live Broadcasting
+  function broadcastAdminDashboard(targetSocket = null) {
+    try {
+      const { queryAll } = require('./db/database');
+      const userCountRes = queryAll('SELECT COUNT(*) as count FROM users');
+      const totalUsers = userCountRes[0]?.count || 0;
+
+      const statsRes = queryAll('SELECT SUM(rounds_played) as rounds FROM stats');
+      const totalRoundsPlayed = statsRes[0]?.rounds || 0;
+
+      const activeRoomsList = roomManager.getAllRooms();
+      const liveGames = activeRoomsList.filter(r => r.gameStarted).length;
+
+      const overview = {
+        totalUsers,
+        activeRooms: activeRoomsList.length,
+        liveGames,
+        totalRoundsPlayed
+      };
+
+      console.log(`[DEBUG] Broadcast Admin Dashboard: ${activeRoomsList.length} rooms, ${liveGames} live games`);
+
+      const rooms = activeRoomsList.map(r => {
+        let playersCount = 0;
+        for (let i = 1; i <= 4; i++) {
+          if (r.seats[i] && r.seats[i].connected) playersCount++;
+        }
+        return {
+          id: r.id,
+          hostId: r.hostId,
+          playersCount,
+          gameStarted: r.gameStarted,
+          phase: r.game ? r.game.phase : null,
+          roundNumber: r.game ? r.game.roundNumber : null,
+          bidAmount: r.game ? r.game.bidAmount : null,
+          vakhaiStake: (r.game && r.game.vakhai) ? r.game.vakhai.vakhaiStake : null,
+          currentTurn: r.game ? ((r.getPublicState ? r.getPublicState() : {}).currentTurn ?? r.game?.currentTurn ?? r.game?.state?.currentTurn ?? null) : null
+        };
+      });
+
+      const payload = { overview, rooms };
+      
+      if (targetSocket) {
+        targetSocket.emit('admin:dashboardUpdate', payload);
+      } else {
+        io.to('admin_dashboard').emit('admin:dashboardUpdate', payload);
+      }
+    } catch (e) {
+      console.warn('Failed to broadcast admin dashboard:', e.message);
+    }
+  }
+
+  // Periodically broadcast dashboard to subscribed admins (every 3 seconds)
+  setInterval(() => {
+    // Only broadcast if there are sockets in the admin_dashboard room
+    const adminRoom = io.sockets.adapter.rooms.get('admin_dashboard');
+    if (adminRoom && adminRoom.size > 0) {
+      broadcastAdminDashboard();
+    }
+  }, 3000);
 
   // Periodic cleanup
   setInterval(() => roomManager.cleanupEmptyRooms(), 60000);

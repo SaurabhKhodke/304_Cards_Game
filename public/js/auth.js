@@ -114,12 +114,21 @@ const AuthUI = {
     // Connect socket
     SocketClient.connect(token);
 
-    // Show lobby
-    App.showScreen('lobby');
-    document.getElementById('lobby-username').textContent = user.displayName;
-    
-    if (!autoLogin) {
-      Animations.showToast(`Welcome, ${user.displayName}!`, 'success');
+    // Route admin users directly to the Admin dashboard
+    if (user.role === 'admin') {
+      if (typeof AdminUI !== 'undefined') AdminUI.onLogin();
+      App.showScreen('admin');
+      if (!autoLogin) {
+        Animations.showToast(`Admin Access Granted: ${user.displayName}`, 'success');
+      }
+    } else {
+      // Show normal lobby
+      App.showScreen('lobby');
+      document.getElementById('lobby-username').textContent = user.displayName;
+      
+      if (!autoLogin) {
+        Animations.showToast(`Welcome, ${user.displayName}!`, 'success');
+      }
     }
   },
 
@@ -128,6 +137,13 @@ const AuthUI = {
     localStorage.removeItem('304_user');
     window.currentUser = null;
     window.authToken = null;
+    
+    // Unsubscribe admin listeners if any
+    if (SocketClient && SocketClient.socket) {
+      SocketClient.emit('admin:unsubscribe');
+      SocketClient.socket.off('admin:dashboardUpdate');
+    }
+    
     SocketClient.disconnect();
     App.showScreen('auth');
   }

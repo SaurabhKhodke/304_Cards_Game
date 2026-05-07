@@ -47,6 +47,7 @@ async function initDatabase() {
 
   // Upgrade path for existing databases
   try { db.run('ALTER TABLE users ADD COLUMN profile_pic TEXT'); } catch (e) {}
+  try { db.run("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'player'"); } catch (e) {}
   db.run(`
     CREATE TABLE IF NOT EXISTS stats (
       user_id INTEGER PRIMARY KEY,

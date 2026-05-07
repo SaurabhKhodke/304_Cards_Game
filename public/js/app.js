@@ -13,6 +13,7 @@ const App = {
     AuthUI.init();
     LobbyUI.init();
     GameUI.init();
+    if (typeof AdminUI !== 'undefined') AdminUI.init();
 
     console.log('🃏 304 Card Game initialized');
   },

@@ -243,6 +243,13 @@ const roomManager = {
   },
 
   /**
+   * Get all rooms as an array
+   */
+  getAllRooms() {
+    return Array.from(rooms.values());
+  },
+
+  /**
    * Clean up empty rooms (run periodically)
    */
   cleanupEmptyRooms() {

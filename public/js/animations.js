@@ -3,9 +3,15 @@
 // ============================================================
 
 const Animations = {
+  _toastDedup: new Map(), // message -> timestamp, for dedup
 
-  /** Show a toast notification */
+  /** Show a toast notification (deduplicated within 1.5s) */
   showToast(message, type = 'info', duration = 3500) {
+    const now = Date.now();
+    const last = this._toastDedup.get(message);
+    if (last && now - last < 1500) return; // deduplicate
+    this._toastDedup.set(message, now);
+
     const container = document.getElementById('toast-container');
     const toast = document.createElement('div');
     toast.className = `toast toast-${type}`;
@@ -110,7 +116,7 @@ const Animations = {
   },
 
   // ============================================================
-  // Show trick winner text (gold pill top banner)
+  // Show trick winner pill
   // ============================================================
   showTrickWinner(name) {
     const existing = document.querySelector('.trick-winner-text');
@@ -118,28 +124,30 @@ const Animations = {
 
     const el = document.createElement('div');
     el.className = 'trick-winner-text';
-    el.textContent = `🏆 Player ${name} won the trick`;
-    
-    // Style as a top banner to avoid overlapping cards
-    el.style.position = 'fixed';
-    el.style.top = '80px';
-    el.style.left = '50%';
-    el.style.transform = 'translateX(-50%) translateY(-20px)';
-    el.style.backgroundColor = 'rgba(0,0,0,0.85)';
-    el.style.border = '1px solid var(--gold)';
-    el.style.color = '#fff';
-    el.style.padding = '12px 24px';
-    el.style.borderRadius = '30px';
-    el.style.fontSize = '1.1rem';
-    el.style.fontFamily = 'var(--font-heading)';
-    el.style.boxShadow = '0 5px 15px rgba(0,0,0,0.5), 0 0 10px rgba(234, 179, 8, 0.4)';
-    el.style.zIndex = '9999';
-    el.style.transition = 'opacity 0.4s ease, transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
-    el.style.opacity = '0';
-    
+    el.textContent = `🏆 ${name} won the trick!`;
+
+    Object.assign(el.style, {
+      position: 'fixed',
+      top: '76px',
+      left: '50%',
+      transform: 'translateX(-50%) translateY(-16px)',
+      background: 'linear-gradient(135deg,rgba(16,185,129,0.97),rgba(5,150,105,0.97))',
+      border: '1px solid rgba(16,185,129,0.6)',
+      color: '#fff',
+      padding: '10px 26px',
+      borderRadius: '30px',
+      fontSize: '0.97rem',
+      fontFamily: 'var(--font-heading)',
+      fontWeight: '800',
+      boxShadow: '0 6px 24px rgba(16,185,129,0.45)',
+      zIndex: '9999',
+      opacity: '0',
+      transition: 'opacity 0.3s ease, transform 0.35s cubic-bezier(0.34,1.56,0.64,1)',
+      whiteSpace: 'nowrap',
+      letterSpacing: '0.2px'
+    });
+
     document.body.appendChild(el);
-    
-    // Trigger animation
     requestAnimationFrame(() => {
       el.style.opacity = '1';
       el.style.transform = 'translateX(-50%) translateY(0)';
@@ -147,25 +155,30 @@ const Animations = {
 
     setTimeout(() => {
       el.style.opacity = '0';
-      el.style.transform = 'translateX(-50%) translateY(-20px)';
-      setTimeout(() => { if (el.parentNode) el.remove(); }, 400);
-    }, 2400);
+      el.style.transform = 'translateX(-50%) translateY(-14px)';
+      setTimeout(() => { if (el.parentNode) el.remove(); }, 350);
+    }, 2200);
   },
 
   // ============================================================
-  // Highlight active player's avatar (turn glow ring)
+  // Highlight active player's avatar AND parent area
   // ============================================================
   setActivePlayer(position) {
-    // Remove from all
+    // Remove from all avatars and areas
     document.querySelectorAll('.player-avatar').forEach(a => a.classList.remove('active-turn'));
+    document.querySelectorAll('.player-area').forEach(a => a.classList.remove('active-player-area'));
     if (!position) return;
 
-    // 'bottom' is my hand area, highlight my chip
-    const avatarId = position === 'bottom'
-      ? 'my-player-avatar'
-      : `avatar-${position}`;
-    const el = document.getElementById(avatarId);
-    if (el) el.classList.add('active-turn');
+    if (position === 'bottom') {
+      const myAv = document.getElementById('my-player-avatar');
+      if (myAv) myAv.classList.add('active-turn');
+    } else {
+      const avatarId = `avatar-${position}`;
+      const el = document.getElementById(avatarId);
+      if (el) el.classList.add('active-turn');
+      const area = document.querySelector(`.player-${position}`);
+      if (area) area.classList.add('active-player-area');
+    }
   },
 
   // ============================================================

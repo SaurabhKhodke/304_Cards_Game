@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/css/game.css" />
   <link rel="stylesheet" href="/css/cards.css" />
   <link rel="stylesheet" href="/css/animations.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
 </head>
 <body>
 
@@ -150,7 +151,7 @@
         <div id="leaderboard-content"></div>
       </div>
     </div>
-    
+
     <!-- Profile Edit Modal -->
     <div id="modal-profile" class="modal-overlay hidden">
       <div class="modal-box">
@@ -174,8 +175,124 @@
     </div>
   </div>
 
+  <!-- ============== SCREEN: ADMIN DASHBOARD ============== -->
+  <div id="screen-admin" class="screen">
+    <div class="admin-sidebar">
+      <div class="admin-logo">
+        <div class="admin-icon">⚙️</div>
+        <h2>Admin Panel</h2>
+      </div>
+      <nav class="admin-nav">
+        <button class="admin-tab active" data-tab="overview">📊 Overview</button>
+        <button class="admin-tab" data-tab="players">👥 Players</button>
+        <button class="admin-tab" data-tab="rooms">🚪 Rooms</button>
+        <button class="admin-tab" data-tab="maintenance">🛠 Maintenance</button>
+      </nav>
+      <div class="admin-sidebar-footer">
+        <button class="btn-text" id="btn-admin-logout" style="color:var(--danger)">🚪 Logout</button>
+      </div>
+    </div>
+    
+    <div class="admin-main">
+      <!-- Overview Tab -->
+      <div id="admin-tab-overview" class="admin-content active">
+        <h2 class="admin-page-title">System Overview</h2>
+        <div class="admin-stats-grid">
+          <div class="admin-stat-card"><div class="stat-value" id="admin-stat-users">-</div><div class="stat-label">Total Users</div></div>
+          <div class="admin-stat-card"><div class="stat-value" id="admin-stat-rooms">-</div><div class="stat-label">Active Rooms</div></div>
+          <div class="admin-stat-card"><div class="stat-value" id="admin-stat-live">-</div><div class="stat-label">Live Games</div></div>
+          <div class="admin-stat-card"><div class="stat-value" id="admin-stat-rounds">-</div><div class="stat-label">Rounds Played</div></div>
+        </div>
+      </div>
+      
+      <!-- Players Tab -->
+      <div id="admin-tab-players" class="admin-content hidden">
+        <h2 class="admin-page-title">Player Management</h2>
+        <div class="admin-table-controls">
+          <input type="text" id="admin-search-players" placeholder="Search players..." class="admin-input" />
+          <button id="btn-admin-refresh-players" class="btn-secondary">Refresh</button>
+        </div>
+        <div class="admin-table-wrapper">
+          <table class="admin-table" id="admin-players-table">
+            <thead><tr><th>ID</th><th>Username</th><th>Display Name</th><th>Role</th><th>Actions</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      
+      <!-- Rooms Tab -->
+      <div id="admin-tab-rooms" class="admin-content hidden">
+        <h2 class="admin-page-title">Active Rooms</h2>
+        <div class="admin-table-controls">
+          <button id="btn-admin-refresh-rooms" class="btn-secondary">Refresh</button>
+        </div>
+        <div class="admin-table-wrapper">
+          <table class="admin-table" id="admin-rooms-table">
+            <thead><tr><th>Room ID</th><th>Players</th><th>Status</th><th>Phase</th><th>Actions</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      
+      <!-- Maintenance Tab -->
+      <div id="admin-tab-maintenance" class="admin-content hidden">
+        <h2 class="admin-page-title">Maintenance & Tools</h2>
+        <div class="admin-tool-grid">
+          <div class="admin-tool-card">
+            <h3>Clear Demo Users</h3>
+            <p>Delete all users with "demo" or "test" in their username.</p>
+            <button id="btn-admin-clear-demo" class="btn-action btn-red">Execute Cleanup</button>
+          </div>
+          <div class="admin-tool-card">
+            <h3>Reset All Stats</h3>
+            <p>Set all player scores, wins, and rounds back to 0.</p>
+            <button id="btn-admin-reset-stats" class="btn-action btn-red">Reset Statistics</button>
+          </div>
+          <div class="admin-tool-card">
+            <h3>Clear Game History</h3>
+            <p>Delete all saved match history logs.</p>
+            <button id="btn-admin-clear-history" class="btn-action btn-red">Clear History</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Admin Modals -->
+    <div id="admin-modal-edit" class="modal-overlay hidden">
+      <div class="modal-box admin-modal">
+        <button class="modal-close" data-close="admin-modal-edit">✕</button>
+        <h3>Edit Player</h3>
+        <input type="hidden" id="admin-edit-userid" />
+        <div class="form-group">
+          <label>Display Name</label>
+          <input type="text" id="admin-edit-displayname" class="admin-input" />
+        </div>
+        <button id="btn-admin-save-player" class="btn-action btn-green btn-full">Save Changes</button>
+      </div>
+    </div>
+    
+    <div id="admin-modal-password" class="modal-overlay hidden">
+      <div class="modal-box admin-modal">
+        <button class="modal-close" data-close="admin-modal-password">✕</button>
+        <h3>Reset Password</h3>
+        <input type="hidden" id="admin-pass-userid" />
+        <div class="form-group">
+          <label>New Password</label>
+          <input type="password" id="admin-new-password" class="admin-input" placeholder="Min 4 chars" />
+        </div>
+        <button id="btn-admin-save-password" class="btn-action btn-red btn-full">Force Reset Password</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============== SCREEN: GAME ============== -->
   <div id="screen-game" class="screen">
+  
+    <!-- Spectator Header -->
+    <div id="spectator-header" class="spectator-header hidden">
+      <span>🔴 LIVE SPECTATE MODE</span>
+      <button id="btn-leave-spectate" class="btn-action btn-red" style="padding:4px 12px; font-size:0.8rem;">Leave Spectate</button>
+    </div>
 
     <!-- Game Top Bar -->
     <div class="game-topbar">
@@ -183,17 +300,17 @@
         <span id="game-username-display" class="game-username"></span>
         <span id="round-display">Round 1</span>
         <span id="phase-display" class="phase-badge">Lobby</span>
-      </div>
-      <div class="game-stats-center" style="display: flex; gap: 15px; margin-left: 20px;">
-        <div class="stat-box">Target: <span id="game-target-score" style="color:var(--gold); font-weight:800;">0</span></div>
-        <div id="hukum-indicator" class="hukum-indicator hidden">
-          <span class="hukum-label">Hukum</span>
-          <span id="hukum-suit-display" class="hukum-suit"></span>
+        <div class="game-stats-center">
+          <div class="stat-box">Target: <span id="game-target-score" style="color:var(--gold);font-weight:800;">0</span></div>
+          <div id="hukum-indicator" class="hukum-indicator hidden">
+            <span class="hukum-label">Trump</span>
+            <span id="hukum-suit-display" class="hukum-suit"></span>
+          </div>
+          <div id="partner-indicator" class="hukum-indicator hidden">
+            <span class="hukum-label" style="color:var(--accent-secondary)">Partner</span>
+            <span id="partner-card-display" class="hukum-suit" style="font-size:1rem"></span>
+          </div>
         </div>
-      </div>
-      <div id="partner-indicator" class="hukum-indicator hidden" style="margin-left:4px;">
-        <span class="hukum-label" style="color: var(--accent-secondary)">Partner</span>
-        <span id="partner-card-display" class="hukum-suit" style="font-size:1.1rem"></span>
       </div>
       <div class="game-info-right">
         <button class="btn-icon-sm" id="btn-scoreboard" title="Scoreboard">📊</button>
@@ -201,8 +318,9 @@
       </div>
     </div>
 
-    <!-- Turn Indicator -->
+    <!-- Turn Indicator - Always visible during gameplay -->
     <div id="turn-indicator" class="turn-indicator hidden">
+      <span id="turn-phase-label"></span>
       <span id="turn-text">Your Turn!</span>
     </div>
 
@@ -235,14 +353,12 @@
 
       <!-- Trick Center -->
       <div class="trick-center">
-        <!-- Deck visual for dealing animation -->
         <div id="deck-center">
           <div class="deck-card-visual"></div>
         </div>
-
-        <div id="trick-top" class="trick-slot"></div>
+        <div id="trick-top"    class="trick-slot"></div>
         <div class="trick-row-mid">
-          <div id="trick-left" class="trick-slot"></div>
+          <div id="trick-left"  class="trick-slot"></div>
           <div id="trick-right" class="trick-slot"></div>
         </div>
         <div id="trick-bottom" class="trick-slot"></div>
@@ -261,43 +377,66 @@
       </div>
     </div>
 
-    <!-- My Player Area (bottom nameplate) -->
-    <div class="my-player-area">
-      <div class="my-player-avatar" id="my-player-avatar">😎</div>
-      <span class="my-player-name" id="my-player-name-display">You</span>
-    </div>
-      
-    <!-- Marriage Actions -->
-    <div id="marriage-actions" class="hidden" style="position:absolute; bottom: 120px; left: 50%; transform: translateX(-50%); z-index: 100; background: var(--bg-glass-light); padding: 10px; border-radius: var(--r-md); border: 1px solid var(--border-gold); box-shadow: var(--shadow-gold); display: flex; gap: 8px;">
-       <select id="marriage-suit-select" style="background: rgba(0,0,0,0.5); color: var(--text-primary); border: 1px solid var(--border); border-radius: var(--r-xs); padding: 5px; font-weight: bold;">
-       </select>
-       <button id="btn-declare-marriage" class="btn-action btn-green" style="padding: 6px 12px; font-size: 0.9rem;">💍 Declare Marriage</button>
-    </div>
+    <!-- Bottom Game Zone -->
+    <div id="game-bottom-zone">
 
-    <!-- Sort Button -->
-    <div id="sort-container" class="sort-container hidden">
-      <button id="btn-sort-hand" class="btn-sort">🔀 Sort Hand</button>
-    </div>
+      <!-- My Player Area (bottom nameplate) -->
+      <div class="my-player-area">
+        <div class="my-player-avatar" id="my-player-avatar">😎</div>
+        <span class="my-player-name" id="my-player-name-display">You</span>
+      </div>
 
-    <!-- My Hand (bottom) -->
-    <div id="my-hand" class="my-hand"></div>
+      <!-- Controls Bar: Sort + Marriage side by side -->
+      <div id="game-controls-bar">
+
+        <!-- Marriage Actions -->
+        <div id="marriage-actions" class="hidden">
+          <select id="marriage-suit-select" style="background:rgba(0,0,0,0.5);color:var(--text-primary);border:1px solid var(--border-gold);border-radius:var(--r-xs);padding:6px 8px;font-weight:700;font-size:0.9rem;"></select>
+          <button id="btn-declare-marriage" class="btn-action btn-green" style="padding:8px 14px;font-size:0.88rem;">💍 Marriage</button>
+        </div>
+
+        <!-- Sort Button -->
+        <div id="sort-container" class="sort-container hidden">
+          <button id="btn-sort-hand" class="btn-sort">🔀 Sort Hand</button>
+        </div>
+
+      </div>
+
+      <!-- My Hand (bottom) -->
+      <div id="my-hand" class="my-hand"></div>
+
+    </div><!-- /#game-bottom-zone -->
 
     <!-- ============== ACTION PANELS ============== -->
+    <!-- NOTE: Placed AFTER game-bottom-zone so fixed positioning puts it above -->
     <div id="action-panel" class="action-panel hidden">
 
       <!-- Vakhai -->
       <div id="vakhai-panel" class="action-section hidden">
         <p id="vakhai-desc" class="action-desc">Declare vakhai or pass</p>
         <div class="action-buttons">
-          <button id="btn-vakhai-3" class="btn-action btn-green">Vakhai 3</button>
-          <button id="btn-vakhai-5" class="btn-action btn-green">Vakhai 5</button>
+          <button id="btn-vakhai-3" class="btn-action btn-green">🎯 Vakhai 3</button>
+          <button id="btn-vakhai-5" class="btn-action btn-green">🎯 Vakhai 5</button>
           <button id="btn-vakhai-pass" class="btn-action btn-ghost">Pass</button>
         </div>
       </div>
 
       <!-- Bidding -->
       <div id="bidding-panel" class="action-section hidden">
-        <p class="action-desc">Current bid: <strong id="current-bid-display">None yet</strong></p>
+
+        <!-- Bid Info Bar: current bid + min bid -->
+        <div class="bid-info-bar">
+          <div class="bid-info-chip">
+            <span class="bid-info-label">Current Bid</span>
+            <strong id="current-bid-display" class="bid-info-value">None yet</strong>
+          </div>
+          <div class="bid-info-chip bid-info-min">
+            <span class="bid-info-label">Your min</span>
+            <strong id="min-bid-display" class="bid-info-value">—</strong>
+          </div>
+        </div>
+
+        <!-- Quick bid buttons -->
         <div class="action-buttons bid-buttons">
           <button class="btn-bid btn-action btn-blue" data-bid="150">150</button>
           <button class="btn-bid btn-action btn-blue" data-bid="180">180</button>
@@ -307,6 +446,8 @@
           <button class="btn-bid btn-action btn-blue" data-bid="280">280</button>
           <button class="btn-bid btn-action btn-blue" data-bid="304">304</button>
         </div>
+
+        <!-- Custom bid + Pass -->
         <div class="custom-bid-row">
           <input type="number" id="custom-bid-input" min="150" max="304" placeholder="Custom bid" class="input-bid" />
           <button id="btn-custom-bid" class="btn-action btn-blue">Bid</button>
@@ -318,18 +459,10 @@
       <div id="hukum-panel" class="action-section hidden">
         <p class="action-desc">Choose your trump suit (hukum)</p>
         <div class="action-buttons suit-buttons">
-          <button class="btn-suit" data-suit="spades">
-            <span class="suit-icon suit-black">♠</span> Spades
-          </button>
-          <button class="btn-suit" data-suit="hearts">
-            <span class="suit-icon suit-red">♥</span> Hearts
-          </button>
-          <button class="btn-suit" data-suit="diamonds">
-            <span class="suit-icon suit-red">♦</span> Diamonds
-          </button>
-          <button class="btn-suit" data-suit="clubs">
-            <span class="suit-icon suit-black">♣</span> Clubs
-          </button>
+          <button class="btn-suit" data-suit="spades"><span class="suit-icon suit-black">♠</span> Spades</button>
+          <button class="btn-suit" data-suit="hearts"><span class="suit-icon suit-red">♥</span> Hearts</button>
+          <button class="btn-suit" data-suit="diamonds"><span class="suit-icon suit-red">♦</span> Diamonds</button>
+          <button class="btn-suit" data-suit="clubs"><span class="suit-icon suit-black">♣</span> Clubs</button>
         </div>
       </div>
 
@@ -342,14 +475,14 @@
 
       <!-- Trick Play -->
       <div id="trickplay-panel" class="action-section hidden">
-        <button id="btn-reveal-partner" class="btn-action btn-blue btn-full"
-          style="box-shadow: 0 0 20px rgba(99,102,241,0.4)">
+        <button id="btn-reveal-partner" class="btn-action btn-blue btn-full" style="box-shadow:0 0 20px rgba(91,94,244,0.4)">
           🤝 Ask Partner to Reveal
         </button>
       </div>
     </div>
 
     <!-- ============== OVERLAYS ============== -->
+
     <!-- Scoreboard -->
     <div id="scoreboard-overlay" class="overlay hidden">
       <div class="overlay-box">
@@ -393,6 +526,7 @@
   <script src="/js/auth.js"></script>
   <script src="/js/lobby.js"></script>
   <script src="/js/game.js"></script>
+  <script src="/js/admin.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>
